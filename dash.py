@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import smtplib
 from datetime import datetime
 from pathlib import Path
+from email.message import EmailMessage
 
 import pandas as pd
 import streamlit as st
@@ -22,6 +24,7 @@ def init_session_state() -> None:
         "log_entries": [],
         "db_url": "",
         "db_engine": None,
+        "smtp_config": {"host": "", "port": 587, "username": "", "use_tls": True},
     }
     for key, value in defaults.items():
         st.session_state.setdefault(key, value)
@@ -155,6 +158,45 @@ def render_activity_log() -> None:
     st.dataframe(pd.DataFrame(st.session_state["log_entries"]))
 
 
+def send_report_email(
+    *,
+    df: pd.DataFrame,
+    dataset_name: str,
+    recipients: list[str],
+    subject: str,
+    body: str,
+    smtp_host: str,
+    smtp_port: int,
+    smtp_username: str,
+    smtp_password: str,
+    use_tls: bool,
+    attach_csv: bool,
+) -> None:
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = smtp_username or "dash@localhost"
+    msg["To"] = ", ".join(recipients)
+    msg.set_content(body)
+
+    if attach_csv:
+        csv_bytes = df.to_csv(index=False).encode("utf-8")
+        msg.add_attachment(
+            csv_bytes,
+            maintype="text",
+            subtype="csv",
+            filename=f"{dataset_name}.csv",
+        )
+
+    with smtplib.SMTP(smtp_host, smtp_port, timeout=30) as server:
+        if use_tls:
+            server.starttls()
+        if smtp_username:
+            server.login(smtp_username, smtp_password)
+        server.send_message(msg)
+
+    add_log(f"Sent report for dataset '{dataset_name}' to {', '.join(recipients)}")
+
+
 def main() -> None:
     init_session_state()
     st.title("dash")
@@ -225,6 +267,58 @@ def main() -> None:
         st.info("Connect a database in the sidebar to enable writeback.")
 
     render_data_exchange(filtered_df, st.session_state["active_dataset"])
+
+    with st.expander("Send report", expanded=True):
+        st.write("Email a snapshot of the active dataset to collaborators.")
+        smtp_state = st.session_state["smtp_config"]
+        smtp_host = st.text_input("SMTP host", value=smtp_state.get("host", ""))
+        smtp_port = st.number_input("SMTP port", value=int(smtp_state.get("port", 587)), min_value=1, max_value=65535)
+        use_tls = st.checkbox("Use STARTTLS", value=bool(smtp_state.get("use_tls", True)))
+        smtp_username = st.text_input("SMTP username (from)", value=smtp_state.get("username", ""))
+        smtp_password = st.text_input("SMTP password", type="password")
+
+        recipients_raw = st.text_input("Recipients (comma-separated)")
+        subject = st.text_input("Subject", value=f"dash report - {st.session_state['active_dataset']}")
+        default_body = (
+            f"Dataset '{st.session_state['active_dataset']}' "
+            f"with {len(filtered_df)} rows and {len(filtered_df.columns)} columns.\n"
+            f"Columns: {', '.join(filtered_df.columns)}\n\n"
+            "Attached: CSV extract of the current view."
+        )
+        body = st.text_area("Body", value=default_body)
+        attach_csv = st.checkbox("Attach CSV extract", value=True)
+
+        if st.button("Send report"):
+            recipients = [addr.strip() for addr in recipients_raw.split(",") if addr.strip()]
+            if not recipients:
+                st.error("Enter at least one recipient.")
+            elif not smtp_host:
+                st.error("SMTP host is required.")
+            else:
+                try:
+                    send_report_email(
+                        df=filtered_df,
+                        dataset_name=st.session_state["active_dataset"],
+                        recipients=recipients,
+                        subject=subject,
+                        body=body,
+                        smtp_host=smtp_host,
+                        smtp_port=int(smtp_port),
+                        smtp_username=smtp_username,
+                        smtp_password=smtp_password,
+                        use_tls=use_tls,
+                        attach_csv=attach_csv,
+                    )
+                    st.session_state["smtp_config"] = {
+                        "host": smtp_host,
+                        "port": int(smtp_port),
+                        "username": smtp_username,
+                        "use_tls": use_tls,
+                    }
+                    st.success(f"Report sent to {', '.join(recipients)}")
+                except Exception as exc:  # noqa: BLE001
+                    st.error(f"Could not send report: {exc}")
+
     render_activity_log()
 
 
