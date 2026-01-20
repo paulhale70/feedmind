@@ -32,6 +32,7 @@ class Theme:
     accent_purple = '#9C27B0'
     accent_pink = '#E91E63'
     accent_cyan = '#00BCD4'
+    accent = '#2196F3'  # Primary accent color
     border = '#BDBDBD'
 
 
@@ -63,6 +64,7 @@ class LightTheme(Theme):
     accent_purple = '#9C27B0'
     accent_pink = '#E91E63'
     accent_cyan = '#00BCD4'
+    accent = '#2196F3'  # Primary accent color
     border = '#BDBDBD'
 
 
@@ -94,6 +96,7 @@ class DarkTheme(Theme):
     accent_purple = '#AB47BC'
     accent_pink = '#EC407A'
     accent_cyan = '#26C6DA'
+    accent = '#0D47A1'  # Primary accent color for dark theme
     border = '#424242'
 
 

@@ -125,8 +125,8 @@ class RSSDatabase:
             cursor.execute("ALTER TABLE feeds ADD COLUMN last_refresh TEXT")
 
     # Category Management
-    def add_category(self, name: str, color: str = '#2196F3') -> bool:
-        """Add a new category."""
+    def add_category(self, name: str, color: str = '#2196F3') -> Optional[int]:
+        """Add a new category. Returns category ID on success, None on failure."""
         try:
             cursor = self.conn.cursor()
             cursor.execute("""
@@ -134,9 +134,9 @@ class RSSDatabase:
                 VALUES (?, ?, ?)
             """, (name, color, datetime.now().isoformat()))
             self.conn.commit()
-            return True
+            return cursor.lastrowid
         except sqlite3.IntegrityError:
-            return False
+            return None
 
     def get_categories(self) -> list[dict]:
         """Get all categories."""
@@ -434,11 +434,20 @@ class RSSDatabase:
         # Total unread
         unread_count = self.get_unread_count()
 
+        # Total favorites
+        cursor.execute("SELECT COUNT(*) FROM articles WHERE is_favorite = 1")
+        favorites_count = cursor.fetchone()[0]
+
+        # Calculate average per day
+        avg_per_day = total_read / days if days > 0 else 0
+
         return {
             'total_read': total_read,
+            'avg_per_day': avg_per_day,
             'daily_stats': daily_stats,
             'total_feeds': total_feeds,
             'unread_count': unread_count,
+            'favorites_count': favorites_count,
             'period_days': days
         }
 
@@ -458,6 +467,40 @@ class RSSDatabase:
             VALUES (?, ?)
         """, (key, value))
         self.conn.commit()
+
+    def update_feed_settings(self, feed_url: str, category_id: Optional[int] = None,
+                           refresh_interval: Optional[int] = None):
+        """Update feed category and/or refresh interval in one call."""
+        cursor = self.conn.cursor()
+        updates = []
+        params = []
+
+        if category_id is not None:
+            updates.append("category_id = ?")
+            params.append(category_id)
+
+        if refresh_interval is not None:
+            updates.append("refresh_interval = ?")
+            params.append(refresh_interval)
+
+        if updates:
+            params.append(feed_url)
+            query = f"UPDATE feeds SET {', '.join(updates)} WHERE url = ?"
+            cursor.execute(query, params)
+            self.conn.commit()
+
+    # Compatibility methods for consistency with V1 and main app
+    def get_feeds(self, category_id: Optional[int] = None) -> list[dict]:
+        """Alias for get_all_feeds for compatibility."""
+        return self.get_all_feeds(category_id)
+
+    def update_last_refresh(self, feed_url: str):
+        """Alias for update_feed_last_refresh for compatibility."""
+        self.update_feed_last_refresh(feed_url)
+
+    def remove_category(self, category_id: int):
+        """Alias for delete_category for compatibility."""
+        self.delete_category(category_id)
 
     def close(self):
         """Close the database connection."""
