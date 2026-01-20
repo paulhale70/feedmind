@@ -25,6 +25,7 @@ def init_session_state() -> None:
         "db_url": "",
         "db_engine": None,
         "smtp_config": {"host": "", "port": 587, "username": "", "use_tls": True},
+        "smtp_config": {"host": "", "port": 587, "username": "", "security": "starttls"},
     }
     for key, value in defaults.items():
         st.session_state.setdefault(key, value)
@@ -195,6 +196,51 @@ def send_report_email(
         server.send_message(msg)
 
     add_log(f"Sent report for dataset '{dataset_name}' to {', '.join(recipients)}")
+    security: str,
+    attach_csv: bool,
+) -> None:
+    server_cls = smtplib.SMTP_SSL if security == "ssl" else smtplib.SMTP
+    with server_cls(smtp_host, smtp_port, timeout=30) as server:
+        server.ehlo()
+        if security == "starttls":
+            server.starttls()
+            server.ehlo()
+        if smtp_username or smtp_password:
+            server.login(smtp_username, smtp_password)
+
+        msg = EmailMessage()
+        msg["Subject"] = subject
+        msg["From"] = smtp_username or "dash@localhost"
+        msg["To"] = ", ".join(recipients)
+        msg.set_content(body)
+
+        if attach_csv:
+            csv_bytes = df.to_csv(index=False).encode("utf-8")
+            msg.add_attachment(
+                csv_bytes,
+                maintype="text",
+                subtype="csv",
+                filename=f"{dataset_name}.csv",
+            )
+
+        server.send_message(msg)
+
+    add_log(
+        f"Sent report for dataset '{dataset_name}' to {', '.join(recipients)} via {security.upper()} on {smtp_host}:{smtp_port}"
+    )
+
+
+def test_smtp_connection(
+    *, smtp_host: str, smtp_port: int, smtp_username: str, smtp_password: str, security: str
+) -> None:
+    server_cls = smtplib.SMTP_SSL if security == "ssl" else smtplib.SMTP
+    with server_cls(smtp_host, smtp_port, timeout=15) as server:
+        server.ehlo()
+        if security == "starttls":
+            server.starttls()
+            server.ehlo()
+        if smtp_username or smtp_password:
+            server.login(smtp_username, smtp_password)
 
 
 def main() -> None:
@@ -274,6 +320,12 @@ def main() -> None:
         smtp_host = st.text_input("SMTP host", value=smtp_state.get("host", ""))
         smtp_port = st.number_input("SMTP port", value=int(smtp_state.get("port", 587)), min_value=1, max_value=65535)
         use_tls = st.checkbox("Use STARTTLS", value=bool(smtp_state.get("use_tls", True)))
+        security = st.selectbox(
+            "Connection security",
+            options=["starttls", "ssl", "none"],
+            format_func=lambda opt: {"starttls": "STARTTLS", "ssl": "SSL (465)", "none": "None"}.get(opt, opt),
+            index=["starttls", "ssl", "none"].index(smtp_state.get("security", "starttls")),
+        )
         smtp_username = st.text_input("SMTP username (from)", value=smtp_state.get("username", ""))
         smtp_password = st.text_input("SMTP password", type="password")
 
@@ -307,6 +359,7 @@ def main() -> None:
                         smtp_username=smtp_username,
                         smtp_password=smtp_password,
                         use_tls=use_tls,
+                        security=security,
                         attach_csv=attach_csv,
                     )
                     st.session_state["smtp_config"] = {
@@ -314,6 +367,7 @@ def main() -> None:
                         "port": int(smtp_port),
                         "username": smtp_username,
                         "use_tls": use_tls,
+                        "security": security,
                     }
                     st.success(f"Report sent to {', '.join(recipients)}")
                 except Exception as exc:  # noqa: BLE001

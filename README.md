@@ -13,8 +13,14 @@ streamlit run dash.py
 ### Send a report
 Inside the dashboard, open **Send report**, fill in your SMTP server details, recipients, and click **Send report** to email a CSV snapshot of the active dataset. Credentials are kept in session state only.
 
-Personal blog/bio/fun site built as a single-page experience.
+## dash
 
-## Running locally
+Run the Streamlit dashboard to ingest Excel data, explore it, connect to a database, and export datasets for other tools:
 
-Open `index.html` in your browser or serve the folder with your favorite static server (for example, `python -m http.server 8000`).
+```bash
+pip install -r requirements.txt  # or install streamlit, pandas, sqlalchemy directly
+streamlit run dash.py
+```
+
+### Send a report
+Inside the dashboard, open **Send report**, fill in your SMTP server details (STARTTLS, SSL, or none), recipients, and click **Test SMTP connection** to verify settings. Then choose **Send report** to email a CSV snapshot of the active dataset. Credentials are kept in session state only.
