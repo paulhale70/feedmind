@@ -82,21 +82,37 @@ cd Wildcat
 
 In the Terminal or Command Prompt window, type:
 
-### For Windows:
+### For RSSreaderV2 (Recommended - includes dark mode, categories, statistics):
+
+**Windows:**
+```bash
+python rss_reader_v2.py
+```
+
+**Mac/Linux:**
+```bash
+python3 rss_reader_v2.py
+```
+
+### For RSSreaderV1 (Original version):
+
+**Windows:**
 ```bash
 python rss_reader.py
 ```
 
-### For Mac/Linux:
+**Mac/Linux:**
 ```bash
 python3 rss_reader.py
 ```
 
 Press Enter and the application should open!
 
-## Step 5: First Time Using RSSreaderV1
+**Note:** V2 will automatically upgrade your V1 database if you have one. All your feeds and articles will be preserved!
 
-When the application opens for the first time:
+## Step 5: First Time Using the RSS Reader
+
+When the application opens for the first time (applies to both V1 and V2):
 
 ### Adding Your First Feed
 
