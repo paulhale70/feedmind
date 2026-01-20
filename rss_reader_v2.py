@@ -13,6 +13,8 @@ from rss_core import RSSFetcher
 from rss_database_v2 import RSSDatabase
 from rss_opml import OPMLHandler
 from rss_themes import LightTheme, DarkTheme, Theme
+from rss_pdf_exporter import PDFExporter
+from rss_notifications import NotificationManager
 
 
 class RSSReaderV2:
@@ -26,6 +28,11 @@ class RSSReaderV2:
         # Initialize core components
         self.db = RSSDatabase("rss_reader.db")
         self.fetcher = RSSFetcher(timeout=15)
+        self.notifier = NotificationManager()
+
+        # Load notification preference
+        notifications_enabled = self.db.get_setting("notifications_enabled", "true") == "true"
+        self.notifier.set_enabled(notifications_enabled)
 
         # Theme management
         self.current_theme: Theme = LightTheme()
@@ -74,6 +81,8 @@ class RSSReaderV2:
         file_menu.add_command(label="Import OPML...", command=self._import_opml, accelerator="Ctrl+I")
         file_menu.add_command(label="Export OPML...", command=self._export_opml, accelerator="Ctrl+E")
         file_menu.add_separator()
+        file_menu.add_command(label="Export to PDF...", command=self._export_pdf, accelerator="Ctrl+P")
+        file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self._on_closing)
 
         # View menu
@@ -92,6 +101,8 @@ class RSSReaderV2:
         menubar.add_cascade(label="Manage", menu=manage_menu)
         manage_menu.add_command(label="Categories...", command=self._manage_categories, accelerator="Ctrl+M")
         manage_menu.add_command(label="Feed Settings...", command=self._feed_settings)
+        manage_menu.add_separator()
+        manage_menu.add_command(label="Preferences...", command=self._show_preferences)
         manage_menu.add_separator()
         manage_menu.add_command(label="Clear Old Articles", command=self._clear_cache)
 
@@ -295,6 +306,7 @@ class RSSReaderV2:
         # Menu shortcuts
         self.root.bind('<Control-i>', lambda e: self._import_opml())
         self.root.bind('<Control-e>', lambda e: self._export_opml())
+        self.root.bind('<Control-p>', lambda e: self._export_pdf())
         self.root.bind('<Control-m>', lambda e: self._manage_categories())
 
         # Scrolling
@@ -584,8 +596,21 @@ class RSSReaderV2:
     def _cache_and_refresh_view(self, url: str, articles: list):
         """Cache articles and refresh view (main thread only)."""
         try:
+            # Count articles before caching
+            old_count = len(self.db.get_cached_articles(url))
+
             self.db.cache_articles(articles, url)
             self.db.update_last_refresh(url)
+
+            # Count new articles
+            new_count = len(self.db.get_cached_articles(url)) - old_count
+
+            # Show notification if there are new articles
+            if new_count > 0:
+                feed = next((f for f in self.db.get_feeds() if f['url'] == url), None)
+                if feed:
+                    self.notifier.notify_new_articles(feed['title'], new_count)
+
             self._load_feeds()
             self._update_view()
             self._set_status("Refresh complete")
@@ -893,6 +918,72 @@ class RSSReaderV2:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to export OPML:\n{str(e)}")
 
+    def _export_pdf(self):
+        """Export articles to PDF file."""
+        # Check if reportlab is available
+        if not PDFExporter.is_available():
+            messagebox.showerror(
+                "PDF Export Unavailable",
+                "PDF export requires the reportlab library.\n\n"
+                "To install it, run:\n"
+                "pip install reportlab\n\n"
+                "or:\n"
+                "pip3 install reportlab"
+            )
+            return
+
+        # Get articles to export
+        articles = []
+        title = "RSS Articles Export"
+
+        if self.current_view == "favorites":
+            articles = self.db.get_favorites(limit=1000)
+            title = "Favorite RSS Articles"
+        elif self.current_view == "unread":
+            if self.current_feed_url:
+                articles = self.db.get_cached_articles(self.current_feed_url, unread_only=True, limit=1000)
+                feed = next((f for f in self.db.get_feeds() if f['url'] == self.current_feed_url), None)
+                if feed:
+                    title = f"Unread Articles from {feed['title']}"
+            else:
+                articles = self.db.search_articles("", show_read=False)
+                title = "All Unread RSS Articles"
+        else:  # all
+            if self.current_feed_url:
+                articles = self.db.get_cached_articles(self.current_feed_url, limit=1000)
+                feed = next((f for f in self.db.get_feeds() if f['url'] == self.current_feed_url), None)
+                if feed:
+                    title = f"Articles from {feed['title']}"
+            else:
+                articles = self.db.get_cached_articles(limit=1000)
+
+        if not articles:
+            messagebox.showinfo("No Articles", "No articles to export")
+            return
+
+        # Ask for file path
+        file_path = filedialog.asksaveasfilename(
+            title="Export to PDF",
+            defaultextension=".pdf",
+            filetypes=[("PDF files", "*.pdf"), ("All files", "*.*")]
+        )
+
+        if not file_path:
+            return
+
+        # Export to PDF
+        self._set_status(f"Exporting {len(articles)} articles to PDF...")
+        try:
+            if PDFExporter.export_articles(articles, file_path, title=title):
+                messagebox.showinfo("Success", f"Exported {len(articles)} articles to PDF")
+                self._set_status(f"Exported {len(articles)} articles to PDF")
+            else:
+                messagebox.showerror("Error", "Failed to export PDF")
+                self._set_status("PDF export failed")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export PDF:\n{str(e)}")
+            self._set_status("PDF export failed")
+
     def _manage_categories(self):
         """Open category management dialog."""
         CategoryManager(self.root, self.db, self._on_categories_changed)
@@ -918,6 +1009,16 @@ class RSSReaderV2:
     def _show_statistics(self):
         """Show reading statistics."""
         StatisticsWindow(self.root, self.db)
+
+    def _show_preferences(self):
+        """Show preferences dialog."""
+        PreferencesDialog(self.root, self.db, self.notifier, self._on_preferences_changed)
+
+    def _on_preferences_changed(self):
+        """Callback when preferences are modified."""
+        # Reload notification settings
+        notifications_enabled = self.db.get_setting("notifications_enabled", "true") == "true"
+        self.notifier.set_enabled(notifications_enabled)
 
     def _set_status(self, message: str):
         """Update status label."""
@@ -1162,6 +1263,157 @@ class StatisticsWindow:
         self.stats_text.tag_config("bold", font=("Arial", 10, "bold"))
 
         self.stats_text.config(state=tk.DISABLED)
+
+
+class PreferencesDialog:
+    """Dialog for application preferences."""
+
+    def __init__(self, parent, db: RSSDatabase, notifier: NotificationManager, callback):
+        self.db = db
+        self.notifier = notifier
+        self.callback = callback
+
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("Preferences")
+        self.dialog.geometry("450x300")
+        self.dialog.transient(parent)
+        self.dialog.grab_set()
+
+        # Create notebook for tabs
+        notebook = ttk.Notebook(self.dialog)
+        notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # Notifications tab
+        notif_frame = tk.Frame(notebook)
+        notebook.add(notif_frame, text="Notifications")
+
+        self._create_notifications_tab(notif_frame)
+
+        # General tab
+        general_frame = tk.Frame(notebook)
+        notebook.add(general_frame, text="General")
+
+        self._create_general_tab(general_frame)
+
+        # Buttons
+        btn_frame = tk.Frame(self.dialog)
+        btn_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+
+        tk.Button(btn_frame, text="Save", command=self._save, width=10).pack(side=tk.LEFT, padx=2)
+        tk.Button(btn_frame, text="Cancel", command=self.dialog.destroy, width=10).pack(side=tk.RIGHT, padx=2)
+
+    def _create_notifications_tab(self, parent):
+        """Create notifications settings tab."""
+        tk.Label(parent, text="Desktop Notifications", font=("Arial", 11, "bold")).pack(anchor=tk.W, padx=10, pady=(10, 5))
+
+        # Check if notifications are available
+        if not NotificationManager.is_available():
+            warning_frame = tk.Frame(parent, bg="#FFF3CD", borderwidth=2, relief=tk.GROOVE)
+            warning_frame.pack(fill=tk.X, padx=10, pady=10)
+
+            tk.Label(
+                warning_frame,
+                text="⚠️  Desktop notifications are not available",
+                bg="#FFF3CD",
+                fg="#856404",
+                font=("Arial", 10, "bold")
+            ).pack(pady=5)
+
+            tk.Label(
+                warning_frame,
+                text="To enable notifications, install the plyer library:\n"
+                     "pip install plyer",
+                bg="#FFF3CD",
+                fg="#856404",
+                font=("Arial", 9)
+            ).pack(pady=5)
+
+        # Enable/disable checkbox
+        self.notif_enabled_var = tk.BooleanVar()
+        current_value = self.db.get_setting("notifications_enabled", "true") == "true"
+        self.notif_enabled_var.set(current_value)
+
+        tk.Checkbutton(
+            parent,
+            text="Enable desktop notifications",
+            variable=self.notif_enabled_var,
+            state=tk.NORMAL if NotificationManager.is_available() else tk.DISABLED
+        ).pack(anchor=tk.W, padx=20, pady=5)
+
+        # Description
+        desc_text = (
+            "When enabled, you'll receive desktop notifications for:\n"
+            "• New articles when refreshing feeds\n"
+            "• Completion of bulk refresh operations\n"
+        )
+        tk.Label(parent, text=desc_text, justify=tk.LEFT, fg="gray").pack(anchor=tk.W, padx=20, pady=10)
+
+        # Test notification button
+        if NotificationManager.is_available():
+            tk.Button(
+                parent,
+                text="Test Notification",
+                command=self._test_notification
+            ).pack(anchor=tk.W, padx=20, pady=10)
+
+    def _create_general_tab(self, parent):
+        """Create general settings tab."""
+        tk.Label(parent, text="General Settings", font=("Arial", 11, "bold")).pack(anchor=tk.W, padx=10, pady=(10, 5))
+
+        # PDF Export info
+        pdf_frame = tk.Frame(parent)
+        pdf_frame.pack(fill=tk.X, padx=10, pady=10)
+
+        tk.Label(pdf_frame, text="PDF Export:", font=("Arial", 10, "bold")).pack(anchor=tk.W)
+
+        if PDFExporter.is_available():
+            tk.Label(
+                pdf_frame,
+                text="✓ PDF export is available",
+                fg="green"
+            ).pack(anchor=tk.W, padx=20)
+        else:
+            warning_frame = tk.Frame(pdf_frame, bg="#FFF3CD", borderwidth=2, relief=tk.GROOVE)
+            warning_frame.pack(fill=tk.X, pady=5)
+
+            tk.Label(
+                warning_frame,
+                text="⚠️  PDF export is not available",
+                bg="#FFF3CD",
+                fg="#856404",
+                font=("Arial", 10, "bold")
+            ).pack(pady=5)
+
+            tk.Label(
+                warning_frame,
+                text="To enable PDF export, install the reportlab library:\n"
+                     "pip install reportlab",
+                bg="#FFF3CD",
+                fg="#856404",
+                font=("Arial", 9)
+            ).pack(pady=5)
+
+        # Database info
+        tk.Label(parent, text=f"\nDatabase Location:", font=("Arial", 10, "bold")).pack(anchor=tk.W, padx=10)
+        tk.Label(parent, text=f"  {self.db.db_path}", fg="gray").pack(anchor=tk.W, padx=10)
+
+    def _test_notification(self):
+        """Send a test notification."""
+        self.notifier.notify_custom(
+            "Test Notification",
+            "If you can see this, notifications are working!"
+        )
+
+    def _save(self):
+        """Save preferences."""
+        # Save notification setting
+        self.db.set_setting("notifications_enabled", "true" if self.notif_enabled_var.get() else "false")
+
+        # Apply changes
+        self.callback()
+
+        messagebox.showinfo("Success", "Preferences saved")
+        self.dialog.destroy()
 
 
 def main():
