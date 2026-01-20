@@ -234,25 +234,35 @@ class RSSReaderApp:
 
         def add_in_thread():
             try:
-                # Fetch to validate
+                # Fetch to validate (network operation in background thread)
                 articles = self.fetcher.fetch_feed(url)
 
                 # Extract feed title from first article or use URL
                 title = url.split('//')[-1].split('/')[0]
 
-                # Add to database
-                if self.db.add_feed(url, title):
-                    self.root.after(0, self._on_feed_added, url, articles)
-                else:
-                    self.root.after(0, lambda: messagebox.showinfo("Info", "Feed already exists"))
-                    self.root.after(0, lambda: self.status_var.set("Ready"))
+                # Schedule database operations on main thread
+                self.root.after(0, lambda: self._add_feed_to_db(url, title, articles))
 
             except Exception as e:
-                logger.error(f"Failed to add feed: {e}")
-                self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to add feed:\n{str(e)}"))
+                logger.error(f"Failed to fetch feed: {e}")
+                self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to fetch feed:\n{str(e)}"))
                 self.root.after(0, lambda: self.status_var.set("Ready"))
 
         threading.Thread(target=add_in_thread, daemon=True).start()
+
+    def _add_feed_to_db(self, url: str, title: str, articles: list):
+        """Add feed to database (must be called from main thread)."""
+        try:
+            # Add to database (on main thread)
+            if self.db.add_feed(url, title):
+                self._on_feed_added(url, articles)
+            else:
+                messagebox.showinfo("Info", "Feed already exists")
+                self.status_var.set("Ready")
+        except Exception as e:
+            logger.error(f"Failed to add feed to database: {e}")
+            messagebox.showerror("Error", f"Failed to add feed to database:\n{str(e)}")
+            self.status_var.set("Ready")
 
     def _on_feed_added(self, url: str, articles: list):
         """Callback when feed is successfully added."""
@@ -496,18 +506,31 @@ class RSSReaderApp:
 
         def refresh_in_thread():
             try:
-                articles = self.fetcher.fetch_feed(self.current_feed)
-                self.db.cache_articles(articles, self.current_feed)
-                self.root.after(0, lambda: self._load_articles(self.current_feed))
-                self.root.after(0, lambda: self._update_unread_count())
-                self.root.after(0, lambda: self._load_feeds())
-                self.root.after(0, lambda: self.status_var.set(f"Refreshed: {len(articles)} articles"))
+                # Fetch articles (network operation in background thread)
+                feed_url = self.current_feed
+                articles = self.fetcher.fetch_feed(feed_url)
+
+                # Schedule database operations on main thread
+                self.root.after(0, lambda: self._cache_and_refresh_view(feed_url, articles))
             except Exception as e:
                 logger.error(f"Failed to refresh feed: {e}")
                 self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to refresh:\n{str(e)}"))
                 self.root.after(0, lambda: self.status_var.set("Ready"))
 
         threading.Thread(target=refresh_in_thread, daemon=True).start()
+
+    def _cache_and_refresh_view(self, feed_url: str, articles: list):
+        """Cache articles and refresh view (must be called from main thread)."""
+        try:
+            self.db.cache_articles(articles, feed_url)
+            self._load_articles(feed_url)
+            self._update_unread_count()
+            self._load_feeds()
+            self.status_var.set(f"Refreshed: {len(articles)} articles")
+        except Exception as e:
+            logger.error(f"Failed to cache articles: {e}")
+            messagebox.showerror("Error", f"Failed to cache articles:\n{str(e)}")
+            self.status_var.set("Ready")
 
     def _refresh_all_feeds(self):
         """Refresh all subscribed feeds."""
@@ -519,22 +542,37 @@ class RSSReaderApp:
         self.status_var.set(f"Refreshing {len(feeds)} feeds...")
 
         def refresh_all_in_thread():
-            total_articles = 0
+            # Fetch all feeds (network operations in background thread)
+            fetched_data = []
             for feed in feeds:
                 try:
                     articles = self.fetcher.fetch_feed(feed['url'])
-                    self.db.cache_articles(articles, feed['url'])
-                    total_articles += len(articles)
+                    fetched_data.append((feed['url'], articles))
                 except Exception as e:
                     logger.error(f"Failed to refresh {feed['url']}: {e}")
 
-            self.root.after(0, lambda: self._update_unread_count())
-            self.root.after(0, lambda: self._load_feeds())
-            if self.current_feed:
-                self.root.after(0, lambda: self._load_articles(self.current_feed))
-            self.root.after(0, lambda: self.status_var.set(f"Refreshed all feeds: {total_articles} articles"))
+            # Schedule database operations on main thread
+            self.root.after(0, lambda: self._cache_all_feeds(fetched_data))
 
         threading.Thread(target=refresh_all_in_thread, daemon=True).start()
+
+    def _cache_all_feeds(self, fetched_data: list):
+        """Cache all fetched feeds (must be called from main thread)."""
+        try:
+            total_articles = 0
+            for feed_url, articles in fetched_data:
+                self.db.cache_articles(articles, feed_url)
+                total_articles += len(articles)
+
+            self._update_unread_count()
+            self._load_feeds()
+            if self.current_feed:
+                self._load_articles(self.current_feed)
+            self.status_var.set(f"Refreshed all feeds: {total_articles} articles")
+        except Exception as e:
+            logger.error(f"Failed to cache all feeds: {e}")
+            messagebox.showerror("Error", f"Failed to cache feeds:\n{str(e)}")
+            self.status_var.set("Ready")
 
     def _toggle_auto_refresh(self):
         """Toggle automatic feed refresh."""
