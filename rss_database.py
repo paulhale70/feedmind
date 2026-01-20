@@ -34,7 +34,8 @@ class RSSDatabase:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 url TEXT UNIQUE NOT NULL,
                 title TEXT,
-                added_date TEXT NOT NULL
+                added_date TEXT NOT NULL,
+                auto_refresh INTEGER DEFAULT 1
             )
         """)
 
@@ -48,12 +49,39 @@ class RSSDatabase:
                 description TEXT,
                 published TEXT,
                 cached_date TEXT NOT NULL,
+                is_read INTEGER DEFAULT 0,
+                is_favorite INTEGER DEFAULT 0,
                 UNIQUE(feed_url, link)
             )
         """)
 
+        # Migrate existing databases - add new columns if they don't exist
+        self._migrate_database(cursor)
+
         self.conn.commit()
         logger.info(f"Database initialized at {self.db_path}")
+
+    def _migrate_database(self, cursor):
+        """Add new columns to existing databases if they don't exist."""
+        # Check if is_read column exists
+        cursor.execute("PRAGMA table_info(articles)")
+        columns = [row[1] for row in cursor.fetchall()]
+
+        if 'is_read' not in columns:
+            cursor.execute("ALTER TABLE articles ADD COLUMN is_read INTEGER DEFAULT 0")
+            logger.info("Added is_read column to articles table")
+
+        if 'is_favorite' not in columns:
+            cursor.execute("ALTER TABLE articles ADD COLUMN is_favorite INTEGER DEFAULT 0")
+            logger.info("Added is_favorite column to articles table")
+
+        # Check feeds table
+        cursor.execute("PRAGMA table_info(feeds)")
+        feed_columns = [row[1] for row in cursor.fetchall()]
+
+        if 'auto_refresh' not in feed_columns:
+            cursor.execute("ALTER TABLE feeds ADD COLUMN auto_refresh INTEGER DEFAULT 1")
+            logger.info("Added auto_refresh column to feeds table")
 
     def add_feed(self, url: str, title: Optional[str] = None) -> bool:
         """
@@ -188,6 +216,165 @@ class RSSDatabase:
         deleted = cursor.rowcount
         self.conn.commit()
         logger.info(f"Deleted {deleted} old articles")
+
+    def mark_as_read(self, article_id: int, is_read: bool = True) -> bool:
+        """
+        Mark an article as read or unread.
+
+        Args:
+            article_id: The article ID
+            is_read: True to mark as read, False for unread
+
+        Returns:
+            True if successful
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            UPDATE articles
+            SET is_read = ?
+            WHERE id = ?
+        """, (1 if is_read else 0, article_id))
+        self.conn.commit()
+        return cursor.rowcount > 0
+
+    def mark_as_favorite(self, article_id: int, is_favorite: bool = True) -> bool:
+        """
+        Mark an article as favorite or unfavorite.
+
+        Args:
+            article_id: The article ID
+            is_favorite: True to mark as favorite, False to unfavorite
+
+        Returns:
+            True if successful
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            UPDATE articles
+            SET is_favorite = ?
+            WHERE id = ?
+        """, (1 if is_favorite else 0, article_id))
+        self.conn.commit()
+        return cursor.rowcount > 0
+
+    def get_favorites(self, limit: int = 100) -> list[dict]:
+        """
+        Get all favorite articles.
+
+        Args:
+            limit: Maximum number of articles to return
+
+        Returns:
+            List of favorite article dictionaries
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT * FROM articles
+            WHERE is_favorite = 1
+            ORDER BY published DESC, cached_date DESC
+            LIMIT ?
+        """, (limit,))
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_unread_count(self, feed_url: Optional[str] = None) -> int:
+        """
+        Get count of unread articles.
+
+        Args:
+            feed_url: Optional feed URL to filter by
+
+        Returns:
+            Number of unread articles
+        """
+        cursor = self.conn.cursor()
+        if feed_url:
+            cursor.execute("""
+                SELECT COUNT(*) FROM articles
+                WHERE is_read = 0 AND feed_url = ?
+            """, (feed_url,))
+        else:
+            cursor.execute("""
+                SELECT COUNT(*) FROM articles
+                WHERE is_read = 0
+            """)
+        return cursor.fetchone()[0]
+
+    def search_articles(self, query: str, feed_url: Optional[str] = None,
+                       show_read: bool = True, favorites_only: bool = False,
+                       limit: int = 100) -> list[dict]:
+        """
+        Search articles by title or description.
+
+        Args:
+            query: Search query string
+            feed_url: Optional feed URL to filter by
+            show_read: Whether to include read articles
+            favorites_only: Only show favorite articles
+            limit: Maximum number of results
+
+        Returns:
+            List of matching article dictionaries
+        """
+        cursor = self.conn.cursor()
+
+        # Build the query
+        conditions = []
+        params = []
+
+        if query:
+            conditions.append("(title LIKE ? OR description LIKE ?)")
+            search_pattern = f"%{query}%"
+            params.extend([search_pattern, search_pattern])
+
+        if feed_url:
+            conditions.append("feed_url = ?")
+            params.append(feed_url)
+
+        if not show_read:
+            conditions.append("is_read = 0")
+
+        if favorites_only:
+            conditions.append("is_favorite = 1")
+
+        where_clause = " AND ".join(conditions) if conditions else "1=1"
+        params.append(limit)
+
+        cursor.execute(f"""
+            SELECT * FROM articles
+            WHERE {where_clause}
+            ORDER BY published DESC, cached_date DESC
+            LIMIT ?
+        """, params)
+
+        return [dict(row) for row in cursor.fetchall()]
+
+    def mark_all_as_read(self, feed_url: Optional[str] = None) -> int:
+        """
+        Mark all articles as read, optionally for a specific feed.
+
+        Args:
+            feed_url: Optional feed URL to filter by
+
+        Returns:
+            Number of articles marked as read
+        """
+        cursor = self.conn.cursor()
+        if feed_url:
+            cursor.execute("""
+                UPDATE articles
+                SET is_read = 1
+                WHERE feed_url = ? AND is_read = 0
+            """, (feed_url,))
+        else:
+            cursor.execute("""
+                UPDATE articles
+                SET is_read = 1
+                WHERE is_read = 0
+            """)
+        count = cursor.rowcount
+        self.conn.commit()
+        logger.info(f"Marked {count} articles as read")
+        return count
 
     def close(self):
         """Close the database connection."""
