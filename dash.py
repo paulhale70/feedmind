@@ -24,6 +24,7 @@ def init_session_state() -> None:
         "log_entries": [],
         "db_url": "",
         "db_engine": None,
+        "smtp_config": {"host": "", "port": 587, "username": "", "use_tls": True},
         "smtp_config": {"host": "", "port": 587, "username": "", "security": "starttls"},
     }
     for key, value in defaults.items():
@@ -169,6 +170,32 @@ def send_report_email(
     smtp_port: int,
     smtp_username: str,
     smtp_password: str,
+    use_tls: bool,
+    attach_csv: bool,
+) -> None:
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = smtp_username or "dash@localhost"
+    msg["To"] = ", ".join(recipients)
+    msg.set_content(body)
+
+    if attach_csv:
+        csv_bytes = df.to_csv(index=False).encode("utf-8")
+        msg.add_attachment(
+            csv_bytes,
+            maintype="text",
+            subtype="csv",
+            filename=f"{dataset_name}.csv",
+        )
+
+    with smtplib.SMTP(smtp_host, smtp_port, timeout=30) as server:
+        if use_tls:
+            server.starttls()
+        if smtp_username:
+            server.login(smtp_username, smtp_password)
+        server.send_message(msg)
+
+    add_log(f"Sent report for dataset '{dataset_name}' to {', '.join(recipients)}")
     security: str,
     attach_csv: bool,
 ) -> None:
@@ -292,6 +319,7 @@ def main() -> None:
         smtp_state = st.session_state["smtp_config"]
         smtp_host = st.text_input("SMTP host", value=smtp_state.get("host", ""))
         smtp_port = st.number_input("SMTP port", value=int(smtp_state.get("port", 587)), min_value=1, max_value=65535)
+        use_tls = st.checkbox("Use STARTTLS", value=bool(smtp_state.get("use_tls", True)))
         security = st.selectbox(
             "Connection security",
             options=["starttls", "ssl", "none"],
@@ -312,22 +340,6 @@ def main() -> None:
         body = st.text_area("Body", value=default_body)
         attach_csv = st.checkbox("Attach CSV extract", value=True)
 
-        if st.button("Test SMTP connection"):
-            if not smtp_host:
-                st.error("SMTP host is required to test the connection.")
-            else:
-                try:
-                    test_smtp_connection(
-                        smtp_host=smtp_host,
-                        smtp_port=int(smtp_port),
-                        smtp_username=smtp_username,
-                        smtp_password=smtp_password,
-                        security=security,
-                    )
-                    st.success("SMTP connection succeeded.")
-                except Exception as exc:  # noqa: BLE001
-                    st.error(f"SMTP connection failed: {exc}")
-
         if st.button("Send report"):
             recipients = [addr.strip() for addr in recipients_raw.split(",") if addr.strip()]
             if not recipients:
@@ -346,6 +358,7 @@ def main() -> None:
                         smtp_port=int(smtp_port),
                         smtp_username=smtp_username,
                         smtp_password=smtp_password,
+                        use_tls=use_tls,
                         security=security,
                         attach_csv=attach_csv,
                     )
@@ -353,6 +366,7 @@ def main() -> None:
                         "host": smtp_host,
                         "port": int(smtp_port),
                         "username": smtp_username,
+                        "use_tls": use_tls,
                         "security": security,
                     }
                     st.success(f"Report sent to {', '.join(recipients)}")
