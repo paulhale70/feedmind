@@ -46,6 +46,10 @@ class RSSReaderV2:
         self.auto_refresh_enabled = False
         self.auto_refresh_job = None
 
+        # Data mappings for listboxes (to store metadata)
+        self.feed_urls = []  # Maps feed listbox index to URL
+        self.category_ids = []  # Maps category listbox index to ID
+
         # Build UI
         self._create_menu()
         self._create_ui()
@@ -403,6 +407,7 @@ class RSSReaderV2:
     def _load_feeds(self):
         """Load feeds from database."""
         self.feed_listbox.delete(0, tk.END)
+        self.feed_urls.clear()
         feeds = self.db.get_feeds()
 
         # Filter by category if selected
@@ -415,21 +420,22 @@ class RSSReaderV2:
             if unread > 0:
                 display += f" ({unread})"
             self.feed_listbox.insert(tk.END, display)
-            self.feed_listbox.itemconfig(tk.END, {'url': feed['url']})
+            self.feed_urls.append(feed['url'])
 
     def _load_categories(self):
         """Load categories from database."""
         self.category_listbox.delete(0, tk.END)
+        self.category_ids.clear()
 
         # Add "All" option
         self.category_listbox.insert(tk.END, "All Feeds")
-        self.category_listbox.itemconfig(0, {'id': None})
+        self.category_ids.append(None)
 
         # Add categories
         categories = self.db.get_categories()
         for cat in categories:
             self.category_listbox.insert(tk.END, cat['name'])
-            self.category_listbox.itemconfig(tk.END, {'id': cat['id']})
+            self.category_ids.append(cat['id'])
 
         # Select "All" by default
         if self.current_category_id is None:
@@ -539,7 +545,7 @@ class RSSReaderV2:
         if not selection:
             return
 
-        url = self.feed_listbox.itemcget(selection[0], 'url')
+        url = self.feed_urls[selection[0]]
         feed = next((f for f in self.db.get_feeds() if f['url'] == url), None)
         if not feed:
             return
@@ -557,7 +563,7 @@ class RSSReaderV2:
             messagebox.showinfo("Info", "Please select a feed to refresh")
             return
 
-        url = self.feed_listbox.itemcget(selection[0], 'url')
+        url = self.feed_urls[selection[0]]
         self._set_status(f"Refreshing feed...")
 
         def refresh_in_thread():
@@ -652,7 +658,7 @@ class RSSReaderV2:
         if not selection:
             return
 
-        cat_id = self.category_listbox.itemcget(selection[0], 'id')
+        cat_id = self.category_ids[selection[0]]
         self.current_category_id = cat_id
         self.current_feed_url = None
         self._load_feeds()
@@ -664,7 +670,7 @@ class RSSReaderV2:
         if not selection:
             return
 
-        url = self.feed_listbox.itemcget(selection[0], 'url')
+        url = self.feed_urls[selection[0]]
         self.current_feed_url = url
         self._update_view()
 
@@ -1000,7 +1006,7 @@ class RSSReaderV2:
             messagebox.showinfo("Info", "Please select a feed")
             return
 
-        url = self.feed_listbox.itemcget(selection[0], 'url')
+        url = self.feed_urls[selection[0]]
         feed = next((f for f in self.db.get_feeds() if f['url'] == url), None)
 
         if feed:
@@ -1038,6 +1044,7 @@ class CategoryManager:
     def __init__(self, parent, db: RSSDatabase, callback):
         self.db = db
         self.callback = callback
+        self.category_ids = []  # Maps listbox index to category ID
 
         self.dialog = tk.Toplevel(parent)
         self.dialog.title("Manage Categories")
@@ -1071,9 +1078,10 @@ class CategoryManager:
     def _load_categories(self):
         """Load categories into listbox."""
         self.listbox.delete(0, tk.END)
+        self.category_ids.clear()
         for cat in self.db.get_categories():
             self.listbox.insert(tk.END, cat['name'])
-            self.listbox.itemconfig(tk.END, {'id': cat['id']})
+            self.category_ids.append(cat['id'])
 
     def _add_category(self):
         """Add new category."""
@@ -1091,7 +1099,7 @@ class CategoryManager:
         if not selection:
             return
 
-        cat_id = self.listbox.itemcget(selection[0], 'id')
+        cat_id = self.category_ids[selection[0]]
         name = self.listbox.get(selection[0])
 
         if messagebox.askyesno("Confirm", f"Remove category '{name}'?\nFeeds will be uncategorized."):
