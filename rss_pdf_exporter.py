@@ -38,7 +38,7 @@ class PDFExporter:
         Export articles to PDF.
 
         Args:
-            articles: List of article dictionaries with title, description, link, pub_date
+            articles: List of article dictionaries with title, description, link, published
             file_path: Path to save PDF file
             title: Document title
             page_size: Page size (letter or A4)
@@ -131,7 +131,7 @@ class PDFExporter:
                 story.append(Paragraph(f"{i+1}. {article_title}", article_title_style))
 
                 # Publication date
-                pub_date = article.get('pub_date', 'Unknown date')
+                pub_date = article.get('published', 'Unknown date')
                 if pub_date and len(pub_date) > 10:
                     pub_date = pub_date[:10]  # Just the date part
                 story.append(Paragraph(f"Published: {pub_date}", date_style))
@@ -278,13 +278,13 @@ if __name__ == "__main__":
                 'title': 'Test Article 1',
                 'description': 'This is a test article description.',
                 'link': 'https://example.com/article1',
-                'pub_date': '2026-01-20'
+                'published': '2026-01-20'
             },
             {
                 'title': 'Test Article 2',
                 'description': 'Another test article with some content.',
                 'link': 'https://example.com/article2',
-                'pub_date': '2026-01-19'
+                'published': '2026-01-19'
             }
         ]
 

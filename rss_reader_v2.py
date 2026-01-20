@@ -464,7 +464,7 @@ class RSSReaderV2:
             unread_marker = "●" if not article['is_read'] else ""
             fav_marker = "★" if article['is_favorite'] else ""
 
-            date_str = article['pub_date'][:10] if article['pub_date'] else ""
+            date_str = article['published'][:10] if article['published'] else ""
 
             # Use theme colors for read/unread
             tags = []
@@ -691,7 +691,7 @@ class RSSReaderV2:
         # Get article details
         cursor = self.db.conn.cursor()
         cursor.execute("""
-            SELECT title, description, link, pub_date, is_read, is_favorite
+            SELECT title, description, link, published, is_read, is_favorite
             FROM articles WHERE id = ?
         """, (article_id,))
 
@@ -781,7 +781,7 @@ class RSSReaderV2:
         for article in articles:
             unread_marker = "●" if not article['is_read'] else ""
             fav_marker = "★" if article['is_favorite'] else ""
-            date_str = article['pub_date'][:10] if article['pub_date'] else ""
+            date_str = article['published'][:10] if article['published'] else ""
 
             tags = []
             if not article['is_read']:
