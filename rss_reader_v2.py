@@ -511,7 +511,8 @@ class RSSReaderV2:
                 else:
                     self.root.after(0, lambda: self._on_feed_add_failed("No articles found"))
             except Exception as e:
-                self.root.after(0, lambda: self._on_feed_add_failed(str(e)))
+                error_msg = str(e)
+                self.root.after(0, lambda: self._on_feed_add_failed(error_msg))
 
         threading.Thread(target=add_in_thread, daemon=True).start()
 
@@ -571,7 +572,8 @@ class RSSReaderV2:
                 articles = self.fetcher.fetch_feed(url)
                 self.root.after(0, lambda: self._cache_and_refresh_view(url, articles))
             except Exception as e:
-                self.root.after(0, lambda: self._set_status(f"Refresh failed: {str(e)}"))
+                error_msg = f"Refresh failed: {str(e)}"
+                self.root.after(0, lambda: self._set_status(error_msg))
 
         threading.Thread(target=refresh_in_thread, daemon=True).start()
 
