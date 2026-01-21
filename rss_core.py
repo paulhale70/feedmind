@@ -20,12 +20,14 @@ class RSSFeed:
     """Represents a single RSS feed entry/article."""
 
     def __init__(self, title: str, link: str, description: str,
-                 published: Optional[str] = None, feed_url: str = ""):
+                 published: Optional[str] = None, feed_url: str = "",
+                 feed_title: str = ""):
         self.title = title
         self.link = link
         self.description = description
         self.published = published
         self.feed_url = feed_url
+        self.feed_title = feed_title  # Title of the feed itself
 
     def __repr__(self):
         return f"RSSFeed(title='{self.title}', link='{self.link}')"
@@ -53,6 +55,12 @@ class RSSFetcher:
             root = ET.fromstring(xml_content)
             articles = []
 
+            # Extract feed title from channel
+            channel = root.find('.//channel')
+            feed_title = ""
+            if channel is not None:
+                feed_title = channel.findtext('title', url)
+
             # Find all item elements
             for item in root.findall('.//item'):
                 title = item.findtext('title', 'No Title')
@@ -68,7 +76,8 @@ class RSSFetcher:
                     link=link,
                     description=description,
                     published=pub_date,
-                    feed_url=url
+                    feed_url=url,
+                    feed_title=feed_title
                 ))
 
             return articles
@@ -84,6 +93,12 @@ class RSSFetcher:
 
             # Atom uses namespaces
             namespace = {'atom': 'http://www.w3.org/2005/Atom'}
+
+            # Extract feed title
+            feed_title_elem = root.find('title')
+            if feed_title_elem is None:
+                feed_title_elem = root.find('atom:title', namespace)
+            feed_title = feed_title_elem.text if feed_title_elem is not None else url
 
             # Try without namespace first, then with
             entries = root.findall('.//entry')
@@ -129,7 +144,8 @@ class RSSFetcher:
                     link=link,
                     description=description,
                     published=published,
-                    feed_url=url
+                    feed_url=url,
+                    feed_title=feed_title
                 ))
 
             return articles
