@@ -153,7 +153,9 @@ def test_opml():
         print("✓ OPML format verified")
 
         # Import OPML (test parsing)
-        imported_feeds, imported_cats = OPMLHandler.import_from_opml(opml_file)
+        result = OPMLHandler.import_from_opml(opml_file)
+        imported_feeds = result['feeds']
+        imported_cats = result['categories']
         assert len(imported_feeds) > 0, "No feeds imported"
         print(f"✓ Imported {len(imported_feeds)} feeds, {len(imported_cats)} categories")
 

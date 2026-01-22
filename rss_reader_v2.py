@@ -863,7 +863,9 @@ class RSSReaderV2:
             return
 
         try:
-            feeds, categories = OPMLHandler.import_from_opml(file_path)
+            result = OPMLHandler.import_from_opml(file_path)
+            feeds = result['feeds']
+            categories = result['categories']
 
             # Import categories first
             cat_map = {}  # old_name -> new_id
