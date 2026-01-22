@@ -107,42 +107,47 @@ class OPMLHandler:
             if body is None:
                 raise ValueError("OPML file has no body element")
 
-            # Parse outlines (categories and feeds)
-            for outline in body.findall('outline'):
-                outline_type = outline.get('type', '')
+            def process_outline(outline, parent_category=None):
+                """Recursively process outline elements."""
+                # Get attributes (case-insensitive)
+                attrs = {k.lower(): v for k, v in outline.attrib.items()}
 
-                # Check if this is a feed or a category
-                if outline_type == 'rss':
-                    # This is a feed without a category
-                    xml_url = outline.get('xmlUrl')
-                    if xml_url:
-                        feeds.append({
-                            'url': xml_url,
-                            'title': outline.get('title') or outline.get('text', xml_url),
-                            'category': None
-                        })
+                xml_url = attrs.get('xmlurl') or attrs.get('xmlurl')
+                outline_type = attrs.get('type', '').lower()
+                title = attrs.get('title') or attrs.get('text', '')
+
+                # If this outline has an xmlUrl, it's a feed
+                if xml_url:
+                    feeds.append({
+                        'url': xml_url,
+                        'title': title or xml_url,
+                        'category': parent_category
+                    })
+                    logger.debug(f"Found feed: {title} ({xml_url}) in category: {parent_category}")
                 else:
-                    # This is likely a category containing feeds
-                    category_name = outline.get('title') or outline.get('text', 'Uncategorized')
+                    # This is a container (category or folder)
+                    # Use title or text as category name
+                    category_name = title or 'Uncategorized'
 
-                    # Add category if not already present
-                    if category_name not in category_map:
-                        category_map[category_name] = len(categories)
-                        categories.append({
-                            'name': category_name,
-                            'feeds': []
-                        })
+                    # Only create category if it has child outlines
+                    children = outline.findall('outline')
+                    if children:
+                        # Add category if not already present
+                        if category_name not in category_map:
+                            category_map[category_name] = len(categories)
+                            categories.append({
+                                'name': category_name,
+                                'feeds': []
+                            })
+                            logger.debug(f"Found category: {category_name}")
 
-                    # Parse feeds within this category
-                    for sub_outline in outline.findall('outline'):
-                        if sub_outline.get('type') == 'rss' or sub_outline.get('xmlUrl'):
-                            xml_url = sub_outline.get('xmlUrl')
-                            if xml_url:
-                                feeds.append({
-                                    'url': xml_url,
-                                    'title': sub_outline.get('title') or sub_outline.get('text', xml_url),
-                                    'category': category_name
-                                })
+                        # Process children with this category
+                        for child in children:
+                            process_outline(child, category_name)
+
+            # Process all top-level outlines
+            for outline in body.findall('outline'):
+                process_outline(outline)
 
             logger.info(f"Imported {len(feeds)} feeds and {len(categories)} categories from {file_path}")
 
