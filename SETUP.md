@@ -1,88 +1,75 @@
-# RSSreaderV1 Setup Guide for Beginners
+# FeedMind 🧠 Setup Guide
 
-This guide will help you install and run the RSSreaderV1 application on your computer, even if you've never used Python before.
+Complete setup guide for FeedMind - the AI-powered RSS reader with podcast support.
+
+---
 
 ## What You'll Need
 
 - A computer running Windows, Mac, or Linux
-- About 5-10 minutes
+- About 10-15 minutes
 - An internet connection
+- Python 3.9 or higher
 
-## Step 1: Install Python
+---
 
-RSSreaderV1 is built with Python, so you need to install it first.
+## Quick Start (Recommended Path)
 
-### For Windows:
+### Step 1: Install Python
 
+**Windows:**
 1. Go to [python.org/downloads](https://www.python.org/downloads/)
-2. Click the big yellow "Download Python" button
-3. Run the downloaded file
-4. **IMPORTANT:** Check the box that says "Add Python to PATH" at the bottom
+2. Click "Download Python 3.11" (or latest version)
+3. Run the installer
+4. ⚠️ **IMPORTANT:** Check "Add Python to PATH"
 5. Click "Install Now"
-6. Wait for the installation to complete
 
-### For Mac:
+**Mac:**
+1. Open Terminal (⌘ + Space, type "Terminal")
+2. Check if Python is installed: `python3 --version`
+3. If you see Python 3.9+, skip to Step 2
+4. Otherwise, download from [python.org/downloads](https://www.python.org/downloads/)
 
-1. Open Terminal (press Command + Space, type "Terminal", press Enter)
-2. Type this command and press Enter:
-   ```bash
-   python3 --version
-   ```
-3. If you see a version number like "Python 3.11.x", you're ready! Skip to Step 2.
-4. If not, go to [python.org/downloads](https://www.python.org/downloads/) and download Python for Mac
-5. Run the downloaded file and follow the installation steps
-
-### For Linux:
-
-Python is usually already installed. Open Terminal and type:
+**Linux:**
 ```bash
-python3 --version
+# Ubuntu/Debian
+sudo apt update
+sudo apt install python3 python3-pip python3-tk
+
+# Fedora
+sudo dnf install python3 python3-pip python3-tkinter
 ```
 
-If you see a version number, you're ready! If not, use your package manager:
-- Ubuntu/Debian: `sudo apt install python3`
-- Fedora: `sudo dnf install python3`
+### Step 2: Download FeedMind
 
-## Step 2: Download the RSSreaderV1 Files
+**Option A: Download ZIP** (Easiest)
+1. Go to the GitHub repository
+2. Click green "Code" button → "Download ZIP"
+3. Extract to your Documents or Desktop folder
 
-You have two options:
-
-### Option A: Download as ZIP (Easier)
-
-1. Go to the GitHub repository page
-2. Click the green "Code" button
-3. Click "Download ZIP"
-4. Extract the ZIP file to a location you'll remember (like your Desktop or Documents folder)
-
-### Option B: Use Git (If you have it installed)
-
-Open Terminal/Command Prompt and type:
+**Option B: Use Git**
 ```bash
 git clone https://github.com/paulhale70/Wildcat.git
 cd Wildcat
 ```
 
-## Step 3: Navigate to the Folder
+### Step 3: Install Base Dependencies
 
-### For Windows:
+Open Terminal/Command Prompt in the Wildcat folder:
 
-1. Open File Explorer
-2. Navigate to where you extracted the files
-3. Hold Shift and right-click in the folder
-4. Click "Open PowerShell window here" or "Open Command Prompt here"
+**Windows:**
+```bash
+pip install -r requirements.txt
+```
 
-### For Mac/Linux:
+**Mac/Linux:**
+```bash
+pip3 install -r requirements.txt
+```
 
-1. Open Terminal
-2. Type `cd` followed by a space
-3. Drag the Wildcat folder into the Terminal window
-4. Press Enter
+### Step 4: Run FeedMind
 
-## Step 4: Run the Application
-
-In the Terminal or Command Prompt window, type:
-
-### For RSSreaderV2 (Recommended - includes dark mode, categories, statistics):
+**Start FeedMind V2** (Recommended - full features, no API needed):
 
 **Windows:**
 ```bash
@@ -94,63 +81,239 @@ python rss_reader_v2.py
 python3 rss_reader_v2.py
 ```
 
-### For RSSreaderV1 (Original version):
+🎉 **That's it! FeedMind should open.**
 
-**Windows:**
+---
+
+## Optional Features Setup
+
+FeedMind has optional features you can enable. Install what you need:
+
+### 🎙️ Podcast Support (V3)
+
+Enable audio playback and podcast downloads:
+
 ```bash
-python rss_reader.py
+# Windows
+pip install pygame mutagen
+
+# Mac/Linux
+pip3 install pygame mutagen
+```
+
+**What this enables:**
+- Built-in audio player
+- Play podcast episodes in FeedMind
+- Download episodes for offline listening
+- Duration and metadata extraction
+
+### 🤖 AI-Powered Summaries (V3.5)
+
+Enable article summarization and extraction:
+
+```bash
+# Windows
+pip install anthropic newspaper3k
+
+# Mac/Linux
+pip3 install anthropic newspaper3k
+```
+
+**What this enables:**
+- TL;DR generation (1-2 sentence summaries)
+- AI-powered article summaries
+- Key points extraction
+- Full-text article extraction from web pages
+
+**You'll also need an API key:**
+1. Get free Claude API key: [console.anthropic.com](https://console.anthropic.com/)
+2. Set environment variable:
+
+**Windows (PowerShell):**
+```powershell
+$env:RSS_API_KEY_CLAUDE="your-api-key-here"
 ```
 
 **Mac/Linux:**
 ```bash
-python3 rss_reader.py
+export RSS_API_KEY_CLAUDE="your-api-key-here"
 ```
 
-Press Enter and the application should open!
+Or set it permanently in your profile (~/.bashrc, ~/.zshrc, etc.)
 
-**Note:** V2 will automatically upgrade your V1 database if you have one. All your feeds and articles will be preserved!
+**Cost:** ~$0.25 per 1,000 articles with Claude Haiku
 
-## Step 5: First Time Using the RSS Reader
+### 📄 PDF Export & Notifications
 
-When the application opens for the first time (applies to both V1 and V2):
+Additional optional features:
+
+```bash
+# Already included in requirements.txt
+pip install reportlab plyer
+```
+
+---
+
+## Feature Versions
+
+Choose which version to run based on your needs:
+
+### FeedMind V1 (Basic)
+```bash
+python rss_reader.py  # or python3 on Mac/Linux
+```
+**Features:**
+- RSS/Atom feed reading
+- Offline caching
+- Read/unread tracking
+- Favorites & search
+- Auto-refresh
+
+### FeedMind V2 (Enhanced) ⭐ Recommended
+```bash
+python rss_reader_v2.py  # or python3 on Mac/Linux
+```
+**Features:**
+- Everything in V1, plus:
+- Categories & folders
+- OPML import/export
+- Dark mode (Ctrl+T)
+- Reading statistics (Ctrl+S)
+- PDF export (Ctrl+P)
+- Desktop notifications
+- Keyboard shortcuts
+
+### FeedMind V3 (Podcasts)
+
+**Note:** V3 is library-based. V2 GUI can use V3 features when you install podcast dependencies.
+
+**Test V3 features:**
+```bash
+python test_v3_features.py
+```
+
+**Features:**
+- Everything in V2, plus:
+- Podcast auto-detection
+- Audio player
+- Episode downloads
+- Smart auto-refresh
+
+### FeedMind V3.5 (AI-Powered) 🤖 Latest
+
+**Test AI features:**
+```bash
+python test_ai_extraction.py
+```
+
+**Features:**
+- Everything in V3, plus:
+- AI summarization
+- TL;DR generation
+- Key points extraction
+- Full-text article extraction
+
+---
+
+## First Time Setup
 
 ### Adding Your First Feed
 
-1. Look for the "RSS Feed URL" text box in the left panel
-2. Copy one of these sample feed URLs:
-   - NASA News: `https://www.nasa.gov/rss/dyn/breaking_news.rss`
-   - TechCrunch: `https://techcrunch.com/feed/`
-   - Hacker News: `https://news.ycombinator.com/rss`
+1. Look for the "RSS Feed URL" text box
+2. Try one of these sample feeds:
+
+**News:**
+```
+NASA Breaking News: https://www.nasa.gov/rss/dyn/breaking_news.rss
+BBC News: http://feeds.bbci.co.uk/news/rss.xml
+TechCrunch: https://techcrunch.com/feed/
+Hacker News: https://news.ycombinator.com/rss
+```
+
+**Podcasts:**
+```
+NASA Podcast: https://www.nasa.gov/rss/dyn/Houston-We-Have-a-Podcast.rss
+```
 
 3. Paste the URL into the text box
-4. Click the green "Add Feed" button (or press Enter)
-5. Wait a few seconds while it downloads the articles
-6. You'll see the feed appear in the "Subscribed Feeds" list
+4. Click "Add Feed" or press Enter
+5. Wait a few seconds for articles to download
+6. The feed appears in your list!
 
-### Reading Articles
+### Using Categories (V2+)
 
-1. Click on a feed in the left sidebar to see its articles
-2. Click on any article in the list to read its description
-3. Double-click an article to open it in your web browser
+1. Click "Manage Categories" (Ctrl+M)
+2. Create categories: "News", "Tech", "Podcasts", etc.
+3. Right-click a feed → assign to category
+4. Filter by category in the sidebar
 
-### Organizing Your Reading
+### Importing from Another RSS Reader (V2+)
 
-- Click **"All"** to see all articles
-- Click **"Unread"** to see only unread articles
-- Click **"Favorites"** to see articles you've starred
-- Use the **search box** at the top to find specific topics
+1. Export OPML from your current reader (usually in Settings)
+2. In FeedMind, press Ctrl+I (Import OPML)
+3. Select your OPML file
+4. All feeds are imported with categories!
 
-## Common Problems and Solutions
+---
 
-### Problem: "python is not recognized" (Windows)
+## Daily Usage
 
-**Solution:** You didn't check "Add Python to PATH" during installation.
-1. Uninstall Python from Windows Settings
-2. Reinstall Python and make sure to check the "Add Python to PATH" box
+### Morning Routine
 
-### Problem: "No module named 'tkinter'" (Linux)
+1. Open FeedMind
+2. Click "Unread" to see new articles
+3. Read summaries (if AI enabled)
+4. Star important articles
+5. Double-click to open in browser
 
-**Solution:** Install tkinter separately:
+### Listening to Podcasts (if enabled)
+
+1. Subscribe to a podcast feed
+2. FeedMind auto-detects episodes
+3. Click an episode to see details
+4. Click "Play" to listen in-app
+5. Or "Download" for offline listening
+
+### Using AI Features (if enabled)
+
+1. Right-click an article
+2. Select "Extract Full Text"
+3. Select "Generate Summary"
+4. View TL;DR and key points instantly
+
+---
+
+## Keyboard Shortcuts (V2+)
+
+**Essential:**
+- `Ctrl+T` - Toggle dark mode
+- `Ctrl+R` - Refresh current feed
+- `Ctrl+Shift+R` - Refresh all feeds
+- `Ctrl+M` - Manage categories
+- `Ctrl+I` - Import OPML
+- `Ctrl+E` - Export OPML
+- `Ctrl+S` - View statistics
+- `Ctrl+P` - Export to PDF (if installed)
+
+**Navigation:**
+- `Enter` - Add feed (when in URL box)
+- `Enter` - Search (when in search box)
+- `Double-click` - Open article in browser
+
+---
+
+## Troubleshooting
+
+### "python is not recognized" (Windows)
+
+**Fix:**
+1. Uninstall Python
+2. Reinstall and check "Add Python to PATH"
+3. Restart Command Prompt
+
+### "No module named 'tkinter'" (Linux)
+
+**Fix:**
 ```bash
 # Ubuntu/Debian
 sudo apt install python3-tk
@@ -159,156 +322,235 @@ sudo apt install python3-tk
 sudo dnf install python3-tkinter
 ```
 
-### Problem: Window opens but is blank or crashes
+### "pygame not available" for podcasts
 
-**Solution:**
-1. Close the application
-2. Delete the file `rss_reader.db` in the Wildcat folder
-3. Run the application again
-
-### Problem: "Failed to add feed"
-
-**Solution:**
-1. Check your internet connection
-2. Make sure the URL starts with `http://` or `https://`
-3. Try a different feed URL to see if the problem is with that specific feed
-4. Some feeds may block automated access - try a different feed
-
-### Problem: Application won't start on Mac
-
-**Solution:** You might need to allow the app to run:
-1. Go to System Preferences → Security & Privacy
-2. Click "Open Anyway" if you see a message about the app
-
-## Tips for New Users
-
-### Finding RSS Feeds
-
-Many websites offer RSS feeds. Look for:
-- Orange RSS icons on websites
-- Links that say "RSS", "Feed", or "Subscribe"
-- Add `/feed` or `/rss` to the end of website URLs (e.g., `example.com/feed`)
-
-### Organizing Your Feeds
-
-1. **Use the Unread view** to focus on new content
-2. **Star important articles** by clicking the "Favorite" button
-3. **Search** for specific topics across all your feeds
-4. **Enable Auto-refresh** to automatically get new articles every 15 minutes
-
-### Keyboard Shortcuts
-
-- Press **Enter** in the URL box to quickly add a feed
-- Press **Enter** in the search box to search
-- **Double-click** any article to open it in your browser
-
-## Understanding the Interface
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    RSSreaderV1                          │
-├──────────────┬──────────────────────────────────────────┤
-│              │  Search: [type here] [Search] [Clear]    │
-│ Add Feed:    │  ┌───────────────────────────────────┐  │
-│ [URL here]   │  │ ● Article 1 (unread)              │  │
-│ [Add][Remove]│  │ ★ Article 2 (favorite)            │  │
-│              │  │ Article 3 (read - gray text)      │  │
-│ [All]        │  └───────────────────────────────────┘  │
-│ [Unread]     │                                          │
-│ [Favorites]  │  Article Details:                        │
-│              │  ┌───────────────────────────────────┐  │
-│ Unread: 12   │  │ Full article description shows    │  │
-│              │  │ here when you click an article    │  │
-│ Feeds:       │  └───────────────────────────────────┘  │
-│ • NASA (5)   │  [Open][Mark Read][Favorite][Cache]    │
-│ • Tech (7)   │                                          │
-│ • News       │                                          │
-│              │                                          │
-│ [Refresh]    │                                          │
-│ [Refresh All]│                                          │
-│ [Mark All ✓] │                                          │
-│ ☑ Auto-ref.  │                                          │
-└──────────────┴──────────────────────────────────────────┘
+**Fix:**
+```bash
+pip install pygame mutagen
 ```
 
-### What the Symbols Mean
+### AI features not working
 
-- **●** = Unread article
-- **★** = Favorite article
-- **(number)** = Unread count next to feed names
-- **Bold text** = Unread article
-- **Gray text** = Read article
+**Check:**
+1. Libraries installed: `pip list | grep anthropic`
+2. API key set: `echo $RSS_API_KEY_CLAUDE`
+3. Internet connection working
+4. API key has credits
 
-## Getting More Help
+### Application crashes or blank window
 
-### If you're stuck:
+**Fix:**
+1. Close FeedMind
+2. Delete database file: `rss_reader_v2.db`
+3. Restart FeedMind
+4. Re-add feeds
 
-1. **Check this guide again** - make sure you followed all steps
-2. **Try the basic test** - run `python3 test_rss.py` to check if everything works
-3. **Look at the error message** - it often tells you what's wrong
-4. **Delete and reinstall** - sometimes starting fresh helps
+### Failed to add feed
 
-### Want to learn more?
+**Check:**
+1. Internet connection
+2. URL starts with http:// or https://
+3. Try a different feed to test
+4. Some sites block automated access
 
-- Read `README.md` for detailed features
-- Read `FEATURES.md` for a complete feature list
-- Explore the application - you can't break anything!
+---
 
-## Updating the Application
+## Testing Your Installation
 
-When a new version is released:
+### Test Base Installation
+```bash
+python rss_reader_v2.py
+```
+Should open without errors.
 
-1. Download the new files
-2. Copy your `rss_reader.db` file from the old folder to the new folder
-   (This saves your feeds and articles!)
-3. Run the new version
+### Test V3 Features
+```bash
+python test_v3_features.py
+```
+Should show podcast and auto-refresh tests.
 
-The database will automatically upgrade to support new features.
+### Test AI Features
+```bash
+python test_ai_extraction.py
+```
+Should show extraction and AI capability tests.
 
-## Daily Use Workflow
+### Test Specific Module
+```bash
+# Test RSS parsing
+python rss_core.py
 
-Here's how to use RSSreaderV1 every day:
+# Test database
+python rss_database_v3.py
 
-### Morning Routine:
-1. Open RSSreaderV1
-2. Click "Unread" to see new articles
-3. Read articles that interest you
-4. Star important ones with the "Favorite" button
-5. Articles you open in browser are automatically marked as read
+# Test audio player
+python rss_audio_player.py
+```
 
-### Weekly Maintenance:
-1. Click "Clear Cache" to remove old articles
-2. Remove feeds you no longer read
-3. Add new feeds you discovered
+---
 
-### Quick Checks:
-- The unread counter shows how many new articles you have
-- Enable auto-refresh to get updates automatically
-- Use search to find specific topics
+## Configuration Tips
 
-## Uninstalling
+### Store API Key Permanently
 
-If you want to remove RSSreaderV1:
+**Windows:**
+1. Search "Environment Variables"
+2. Click "Environment Variables" button
+3. Add new user variable:
+   - Name: `RSS_API_KEY_CLAUDE`
+   - Value: your API key
+4. Restart terminal
 
-1. Delete the Wildcat folder
-2. That's it! No registry entries or system files to clean up
+**Mac/Linux:**
+Add to `~/.bashrc` or `~/.zshrc`:
+```bash
+export RSS_API_KEY_CLAUDE="your-api-key-here"
+```
 
-Your feeds and articles are stored in `rss_reader.db` in the Wildcat folder, so if you keep that file, you can always come back later.
+Then run: `source ~/.bashrc`
 
-## Privacy and Data
+### Enable Auto-Refresh (V3)
 
-- **All your data stays on your computer** - nothing is sent to any servers
-- **No account needed** - no registration, no email, no tracking
-- **Your feeds are private** - only you know what you subscribe to
-- **Works offline** - read cached articles without internet
+In V2, enable auto-refresh checkbox for background updates every 15 minutes.
 
-## Summary
+### Change Theme (V2)
 
-1. ✅ Install Python
-2. ✅ Download RSSreaderV1 files
-3. ✅ Open Terminal in the folder
-4. ✅ Run `python3 rss_reader.py`
-5. ✅ Add your first feed
-6. ✅ Start reading!
+Press `Ctrl+T` to toggle between light and dark mode.
 
-**You're all set! Enjoy staying updated with RSSreaderV1!** 📰✨
+---
+
+## Advanced Setup
+
+### Using Alternative AI Providers
+
+FeedMind supports both Claude and OpenAI:
+
+**For OpenAI:**
+```bash
+pip install openai
+export RSS_API_KEY_OPENAI="your-openai-key"
+```
+
+**In code:**
+```python
+from rss_ai_summarizer import AISummarizer, AIProvider
+summarizer = AISummarizer(provider=AIProvider.OPENAI)
+```
+
+### Using Alternative Extraction Library
+
+For lightweight extraction, use trafilatura instead of newspaper3k:
+
+```bash
+pip install trafilatura
+```
+
+### Custom Database Location
+
+```bash
+# Set environment variable
+export RSS_DATABASE_PATH="/path/to/custom/feedmind.db"
+```
+
+---
+
+## File Locations
+
+**Database:**
+- V1: `rss_reader.db`
+- V2: `rss_reader_v2.db`
+- V3/V3.5: `rss_reader_v3.db`
+
+**Downloaded Podcasts:**
+- Default: `podcast_downloads/` folder
+
+**Configuration:**
+- Stored in database settings table
+- API keys in environment variables (recommended)
+
+---
+
+## Updating FeedMind
+
+When new version is released:
+
+1. Download new files
+2. Keep your database file (`.db`)
+3. Run new version
+4. Database auto-migrates!
+
+**Your data is preserved:**
+- All feeds
+- All articles
+- All categories
+- All settings
+- Reading history
+- Downloaded podcasts
+
+---
+
+## Getting Help
+
+**Documentation:**
+- [Main README](README.md) - Overview and quick start
+- [V2 Features](RSS_V2_FEATURES.md) - Categories, OPML, dark mode
+- [V3 Podcast Guide](RSS_V3_FEATURES.md) - Audio features
+- [AI Features Guide](RSS_AI_FEATURES.md) - Summarization & extraction
+
+**Testing:**
+- Run test scripts to verify functionality
+- Check error messages for clues
+- Try with sample feeds first
+
+**Common Resources:**
+- Claude API: https://console.anthropic.com/
+- OpenAI API: https://platform.openai.com/
+- Python Help: https://www.python.org/about/help/
+
+---
+
+## Privacy & Security
+
+✅ **Your data stays local**
+- All feeds and articles in local SQLite database
+- No cloud sync (unless you enable it)
+- No tracking or telemetry
+
+✅ **API keys are secure**
+- Environment variables (recommended)
+- Never logged or shared
+- Only sent to chosen AI provider
+
+✅ **Network usage**
+- Only fetches feeds you subscribe to
+- AI only when you explicitly use it
+- No background tracking
+
+---
+
+## Summary Checklist
+
+Installation:
+- [ ] Python 3.9+ installed
+- [ ] FeedMind downloaded
+- [ ] Base dependencies installed (`pip install -r requirements.txt`)
+- [ ] FeedMind V2 runs successfully
+
+Optional Features:
+- [ ] Podcast support installed (`pip install pygame mutagen`)
+- [ ] AI features installed (`pip install anthropic newspaper3k`)
+- [ ] API key configured (for AI features)
+
+First Steps:
+- [ ] Added first RSS feed
+- [ ] Created categories
+- [ ] Enabled dark mode (Ctrl+T)
+- [ ] Imported OPML (if migrating)
+
+You're ready! 🎉
+
+---
+
+**Made with 🧠 by the FeedMind community**
+
+*Smart feeds. Smarter reading.*
