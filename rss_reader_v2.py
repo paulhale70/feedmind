@@ -7,6 +7,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, simpledialog
 import webbrowser
 import threading
+import os
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict
 from rss_core import RSSFetcher
@@ -19,6 +20,7 @@ from rss_notifications import NotificationManager
 # Optional V3 features (podcast support)
 try:
     from rss_audio_player_ui import AudioPlayerWidget
+    from rss_podcast_downloader import PodcastDownloader
     PODCAST_SUPPORT = True
 except ImportError:
     PODCAST_SUPPORT = False
@@ -68,9 +70,10 @@ class FeedMind:
 
         # V3 Podcast support
         self.audio_player = None
+        self.podcast_downloader = None
         if PODCAST_SUPPORT:
+            self.podcast_downloader = PodcastDownloader("podcast_downloads")
             # Audio player widget will be created in _create_ui
-            pass
 
         # V3.5 AI support
         self.ai_summarizer = None
@@ -337,6 +340,19 @@ class FeedMind:
 
         self.fav_btn = tk.Button(action_frame, text="Favorite (F)", command=self._toggle_favorite)
         self.fav_btn.pack(side=tk.LEFT, padx=2)
+
+        # Podcast buttons (V3 feature)
+        if PODCAST_SUPPORT:
+            self.podcast_download_btn = tk.Button(action_frame, text="📥 Download Episode", command=self._download_podcast)
+            # Initially hidden
+            self.podcast_download_btn.pack_forget()
+
+        # Podcast player (V3 feature)
+        if PODCAST_SUPPORT:
+            self.audio_player = AudioPlayerWidget(self.right_panel)
+            self.audio_player.pack(fill=tk.X, padx=5, pady=5)
+            # Initially hidden
+            self.audio_player.pack_forget()
 
     def _setup_keyboard_shortcuts(self):
         """Set up keyboard shortcuts."""
@@ -745,22 +761,30 @@ class FeedMind:
         article_id = int(tags[0])
         self.selected_article_id = article_id
 
-        # Get article details
+        # Get article details (including podcast info)
         cursor = self.db.conn.cursor()
         cursor.execute("""
-            SELECT title, description, link, published, is_read, is_favorite
+            SELECT title, description, link, published, is_read, is_favorite,
+                   audio_url, duration_seconds
             FROM articles WHERE id = ?
         """, (article_id,))
 
         row = cursor.fetchone()
         if row:
-            title, desc, link, date, is_read, is_fav = row
+            title, desc, link, date, is_read, is_fav, audio_url, duration = row
 
             # Update detail view
             self.detail_text.config(state=tk.NORMAL)
             self.detail_text.delete(1.0, tk.END)
             self.detail_text.insert(tk.END, f"Title: {title}\n\n")
             self.detail_text.insert(tk.END, f"Date: {date}\n\n")
+
+            # Show podcast info if available
+            if audio_url and duration:
+                mins = duration // 60
+                secs = duration % 60
+                self.detail_text.insert(tk.END, f"🎙️ Podcast Episode ({mins}:{secs:02d})\n\n")
+
             self.detail_text.insert(tk.END, f"Link: {link}\n\n")
             self.detail_text.insert(tk.END, f"Description:\n{desc}\n")
             self.detail_text.config(state=tk.DISABLED)
@@ -768,6 +792,27 @@ class FeedMind:
             # Update button states
             self.read_btn.config(text="Mark Unread (R)" if is_read else "Mark Read (R)")
             self.fav_btn.config(text="Unfavorite (F)" if is_fav else "Favorite (F)")
+
+            # Handle podcast player and download button (V3 feature)
+            if PODCAST_SUPPORT and self.audio_player and audio_url:
+                # Check if episode is downloaded
+                download_path = self.db.get_download_path(article_id)
+
+                if download_path and os.path.exists(download_path):
+                    # Load downloaded episode
+                    self.audio_player.pack(fill=tk.X, padx=5, pady=5)
+                    self.audio_player.load_episode(download_path, title)
+                    self.podcast_download_btn.pack_forget()  # Hide download button
+                    self._set_status(f"Podcast episode ready: {title}")
+                else:
+                    # Show player but indicate download needed
+                    self.audio_player.pack(fill=tk.X, padx=5, pady=5)
+                    self.podcast_download_btn.pack(side=tk.LEFT, padx=2)  # Show download button
+                    self._set_status(f"Podcast episode (download to play): {title}")
+            elif PODCAST_SUPPORT and self.audio_player:
+                # Hide player and download button for non-podcast articles
+                self.audio_player.pack_forget()
+                self.podcast_download_btn.pack_forget()
 
     def _open_article(self):
         """Open selected article in browser."""
@@ -814,6 +859,85 @@ class FeedMind:
             self.db.mark_as_favorite(self.selected_article_id, new_status)
             self._update_view()
             self._on_article_select(None)  # Refresh detail view
+
+    def _download_podcast(self):
+        """Download podcast episode for offline playback."""
+        if not PODCAST_SUPPORT or not self.selected_article_id:
+            return
+
+        # Get article with audio URL
+        cursor = self.db.conn.cursor()
+        cursor.execute("""
+            SELECT audio_url, title FROM articles WHERE id = ?
+        """, (self.selected_article_id,))
+
+        row = cursor.fetchone()
+        if not row or not row[0]:
+            messagebox.showwarning("No Podcast", "This article is not a podcast episode")
+            return
+
+        audio_url, title = row
+
+        # Check if already downloaded
+        existing_path = self.db.get_download_path(self.selected_article_id)
+        if existing_path and os.path.exists(existing_path):
+            messagebox.showinfo("Already Downloaded", "This episode is already downloaded")
+            return
+
+        self._set_status(f"Downloading: {title}...")
+
+        # Download with progress callback
+        def on_progress(downloaded, total):
+            if total > 0:
+                percent = (downloaded / total) * 100
+                self.root.after(0, lambda p=percent: self._set_status(f"Downloading: {p:.1f}%"))
+
+        def on_complete(success, file_path, error):
+            if success:
+                try:
+                    # Get file size
+                    file_size = os.path.getsize(file_path)
+
+                    # Try to extract duration with mutagen if available
+                    duration = 0
+                    try:
+                        from mutagen import File as MutagenFile
+                        audio = MutagenFile(file_path)
+                        if audio and audio.info:
+                            duration = int(audio.info.length)
+                    except:
+                        pass
+
+                    # Store in database
+                    self.db.add_podcast_download(
+                        self.selected_article_id,
+                        audio_url,
+                        file_path,
+                        file_size,
+                        duration
+                    )
+
+                    self.root.after(0, lambda: messagebox.showinfo("Success", f"Episode downloaded!\n\n{file_size // 1024 // 1024} MB"))
+                    self.root.after(0, lambda: self._set_status("Download complete"))
+                    # Reload article to show player with downloaded episode
+                    self.root.after(0, lambda: self._on_article_select(None))
+                except Exception as e:
+                    self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to save download info: {e}"))
+                    self.root.after(0, lambda: self._set_status("Ready"))
+            else:
+                self.root.after(0, lambda: messagebox.showerror("Failed", f"Download failed: {error}"))
+                self.root.after(0, lambda: self._set_status("Download failed"))
+
+        # Start download
+        try:
+            self.podcast_downloader.download(
+                audio_url,
+                progress_callback=on_progress,
+                completion_callback=on_complete
+            )
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to start download: {e}")
+            self._set_status("Ready")
 
     def _change_view(self, view: str):
         """Change view mode (all/unread/favorites)."""
