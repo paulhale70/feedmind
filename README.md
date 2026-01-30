@@ -1,136 +1,335 @@
 # Wildcat
-This is a learn to code project
 
-## RSSreaderV1 - Desktop App
+This is a learn to code project featuring multiple applications.
 
-A feature-rich desktop RSS feed reader application built with Python and Tkinter. This professional-grade RSS reader includes advanced features like read/unread tracking, favorites, search, filtering, and automatic refresh.
+---
 
-### Features Overview
+# FeedMind 🧠
 
-- ✅ **Subscribe to multiple RSS/Atom feeds**
-- ✅ **Mark articles as read/unread** with visual indicators
-- ✅ **Save favorite articles** for later reading
-- ✅ **Search and filter** articles by keyword
-- ✅ **Automatic feed refresh** every 15 minutes (optional)
-- ✅ **SQLite database** for caching articles offline
-- ✅ **Clean, intuitive GUI** with organized views
-- ✅ **No external dependencies** (uses Python built-in libraries only)
+**AI-Powered RSS Reader with Podcast Support**
 
-### Running the RSS Reader
+FeedMind is an intelligent RSS/Atom feed reader that goes beyond simple aggregation. It uses AI to help you understand content faster, supports podcast playback, and keeps you organized with smart features.
+
+## ✨ What Makes FeedMind Special?
+
+Most RSS readers just show you articles. **FeedMind helps you understand them.**
+
+- 🤖 **AI Summaries** - Get TL;DR and key points for any article
+- 🎙️ **Podcast Player** - Play episodes directly in the app
+- 📄 **Full-Text Extraction** - Fetch complete articles, not just snippets
+- 🔄 **Smart Auto-Refresh** - Adapts to how often feeds update
+- 📁 **Categories & OPML** - Import from any RSS reader
+- 🌙 **Dark Mode** - Easy on the eyes
+
+---
+
+## 🚀 Quick Start
+
+### Installation
 
 ```bash
-python3 rss_reader.py
+# Install base features
+pip install -r requirements.txt
+
+# Run FeedMind V2 (full-featured, no API needed)
+python rss_reader_v2.py
 ```
 
-### Complete Feature Guide
-
-#### 1. Feed Management
-- **Add RSS/Atom feeds by URL** - Simply paste any RSS or Atom feed URL
-- **Subscribe to unlimited feeds** - No limit on the number of feeds
-- **Remove unwanted feeds** - One-click feed deletion
-- **Unread count per feed** - See how many unread articles each feed has
-- **Press Enter** to quickly add a feed from the URL field
-
-#### 2. Article Organization & Views
-- **Three viewing modes:**
-  - **All** - See all cached articles
-  - **Unread** - Filter to show only unread articles
-  - **Favorites** - Quick access to your starred articles
-- **Visual status indicators:**
-  - **Bold text** = Unread articles
-  - **Gray text** = Read articles
-  - **★** symbol = Favorite articles
-  - **●** symbol = Unread indicator
-- **Unread counter** - Real-time display of total unread articles
-
-#### 3. Reading & Interaction
-- **Article details panel** - Full description and metadata display
-- **Double-click to open** - Opens articles in your default browser
-- **One-click read/unread toggle** - Mark articles with a single button
-- **Favorite button** - Star articles you want to save
-- **Auto-mark as read** - Opening in browser automatically marks as read
-- **Articles cached offline** - Read articles even without internet
-
-#### 4. Search & Filter
-- **Full-text search** - Search article titles and descriptions
-- **Search respects current view** - Filters work with All/Unread/Favorites
-- **Press Enter to search** - Quick keyboard-driven search
-- **Clear search button** - Return to normal view instantly
-- **Feed-specific search** - Search within a selected feed
-
-#### 5. Refresh & Sync
-- **Refresh individual feed** - Update one feed with latest articles
-- **Refresh all feeds** - Update all subscribed feeds at once
-- **Auto-refresh mode** - Automatically refresh all feeds every 15 minutes
-- **Background threading** - Refreshes don't freeze the UI
-- **Mark all as read** - Bulk operation for current feed or all feeds
-
-#### 6. Cache Management
-- **SQLite database storage** - Efficient local caching
-- **30-day automatic cleanup** - Remove articles older than 30 days
-- **Database migration** - Automatically updates schema for new features
-- **Offline reading** - All cached articles available without internet
-
-### Keyboard Shortcuts
-
-- **Enter** in URL field - Add feed
-- **Enter** in search field - Execute search
-- **Double-click** article - Open in browser
-
-### Sample RSS Feeds to Try
-
-Popular news and technology feeds:
-
-- **NASA Breaking News:** `https://www.nasa.gov/rss/dyn/breaking_news.rss`
-- **TechCrunch:** `https://techcrunch.com/feed/`
-- **Hacker News:** `https://news.ycombinator.com/rss`
-- **Reddit Front Page:** `https://www.reddit.com/.rss`
-- **The Verge:** `https://www.theverge.com/rss/index.xml`
-- **BBC News:** `http://feeds.bbci.co.uk/news/rss.xml`
-- **New York Times:** `https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml`
-- **ArsTechnica:** `https://feeds.arstechnica.com/arstechnica/index`
-
-### Technical Details
-
-**Built with:**
-- Python 3.11+
-- Tkinter (built-in GUI library)
-- SQLite3 (built-in database)
-- urllib (built-in HTTP library)
-- xml.etree.ElementTree (built-in XML parser)
-
-**No external dependencies required!** The application uses only Python's standard library.
-
-### Testing
-
-Run the test script to verify functionality:
+### Optional AI Features
 
 ```bash
-python3 test_rss.py
+# Install AI capabilities
+pip install anthropic newspaper3k
+
+# Set your Claude API key
+export RSS_API_KEY_CLAUDE="your-api-key"
+
+# Test AI features
+python test_ai_extraction.py
 ```
 
-This tests RSS/Atom feed fetching, parsing, and database operations.
+### Sample Feeds to Try
 
-## dash
+```
+NASA Breaking News: https://www.nasa.gov/rss/dyn/breaking_news.rss
+TechCrunch: https://techcrunch.com/feed/
+NASA Podcast: https://www.nasa.gov/rss/dyn/Houston-We-Have-a-Podcast.rss
+Hacker News: https://news.ycombinator.com/rss
+BBC News: http://feeds.bbci.co.uk/news/rss.xml
+```
 
-Run the Streamlit dashboard to ingest Excel data, explore it, connect to a database, and export datasets for other tools:
+---
+
+## 📦 Feature Versions
+
+### V1: Basic RSS Reader
+- ✓ RSS/Atom feed parsing
+- ✓ Article caching & offline reading
+- ✓ Read/unread tracking
+- ✓ Favorites & search
+- ✓ Auto-refresh
+
+**Run V1:**
+```bash
+python rss_reader.py
+```
+
+### V2: Enhanced Organization
+- ✓ **Categories & folders**
+- ✓ **OPML import/export**
+- ✓ **Dark mode** with themes
+- ✓ **Reading statistics**
+- ✓ **PDF export**
+- ✓ **Desktop notifications**
+- ✓ **Keyboard shortcuts** (Ctrl+T, Ctrl+S, etc.)
+
+**Run V2:**
+```bash
+python rss_reader_v2.py
+```
+
+### V3: Podcast Support
+- ✓ **Auto-detect podcast feeds**
+- ✓ **Built-in audio player** with controls
+- ✓ **Download episodes** for offline listening
+- ✓ **Smart auto-refresh** based on feed activity
+- ✓ **Background updates**
+
+**Test V3:**
+```bash
+python test_v3_features.py
+```
+
+### V3.5: AI-Powered ⭐ Latest
+- ✓ **AI Summarization** (Claude/OpenAI)
+- ✓ **TL;DR generation** (1-2 sentences)
+- ✓ **Key points extraction** (bullet points)
+- ✓ **Full-text extraction** from web pages
+- ✓ **API key management**
+
+**Test AI Features:**
+```bash
+python test_ai_extraction.py
+```
+
+---
+
+## 🧠 AI Features Deep Dive
+
+### What Can FeedMind's AI Do?
+
+1. **TL;DR** - Ultra-quick 1-2 sentence summary
+   ```
+   "AI research shows significant progress in language models.
+   New techniques improve efficiency while maintaining quality."
+   ```
+
+2. **Smart Summary** - Comprehensive overview (200 words)
+   ```
+   Detailed paragraph covering main points, context,
+   and key insights from the article...
+   ```
+
+3. **Key Points** - Bulleted main takeaways
+   ```
+   • Language models now 10x more efficient
+   • New training technique reduces compute costs
+   • Open-source community driving innovation
+   ```
+
+### Cost-Effective
+
+- Uses **Claude Haiku** (recommended) or **GPT-3.5-turbo**
+- Only **~$0.25 per 1,000 articles** with Claude
+- Full-text extraction is **completely FREE**
+- Summaries are cached - never re-process
+
+### Get Started with AI
+
+```python
+from rss_ai_summarizer import AISummarizer, AIProvider
+
+# Initialize with your API key
+summarizer = AISummarizer(
+    provider=AIProvider.CLAUDE,
+    api_key="your-key"
+)
+
+# Get comprehensive summary
+result = summarizer.summarize_article(article_text)
+print(f"TL;DR: {result['tldr']}")
+```
+
+**Get API Keys:**
+- Claude: https://console.anthropic.com/ (recommended)
+- OpenAI: https://platform.openai.com/api-keys
+
+---
+
+## 🎙️ Podcast Features
+
+### First-Class Podcast Support
+
+Unlike other RSS readers, FeedMind treats podcasts seriously:
+
+- **Auto-Detection** - Identifies podcast feeds instantly
+- **Episode Metadata** - Duration, file size, show notes
+- **Download Manager** - Save episodes for offline listening
+- **Built-in Player** - Play directly in FeedMind
+- **Progress Tracking** - Resume where you left off
+
+### Try a Podcast Feed
+
+```
+NASA Houston We Have a Podcast:
+https://www.nasa.gov/rss/dyn/Houston-We-Have-a-Podcast.rss
+```
+
+The player will appear automatically when you select a podcast episode!
+
+---
+
+## 📖 Complete Documentation
+
+- **[V2 Features Guide](RSS_V2_FEATURES.md)** - Categories, OPML, dark mode, shortcuts
+- **[V3 Podcast Guide](RSS_V3_FEATURES.md)** - Audio player, downloads, auto-refresh
+- **[AI Features Guide](RSS_AI_FEATURES.md)** - Summarization, extraction, API setup
+
+---
+
+## 🛠️ Technology Stack
+
+**Core:**
+- Python 3.9+ / SQLite / Tkinter
+
+**AI & Extraction:**
+- Anthropic Claude API
+- OpenAI GPT API
+- newspaper3k / trafilatura
+
+**Podcast:**
+- pygame (audio playback)
+- mutagen (metadata)
+
+**Optional:**
+- reportlab (PDF export)
+- plyer (notifications)
+
+---
+
+## 🎯 Use Cases
+
+### 📰 News Junkies
+- Subscribe to dozens of news sources
+- Get TL;DR for breaking news
+- Organize by topic (Tech, Politics, Sports)
+- Export important articles to PDF
+
+### 🎓 Researchers
+- Extract full-text for offline reading
+- AI summaries of academic articles
+- Key points extraction for lit reviews
+- PDF export for archival
+
+### 🎙️ Podcast Fans
+- All your shows in one place
+- Download episodes for commutes
+- No app switching needed
+- Smart refresh keeps shows updated
+
+### 💼 Professionals
+- Stay current in your industry
+- Quick TL;DR saves reading time
+- Categories for different projects
+- Reading stats track your habits
+
+---
+
+## ⚡ Quick Feature Comparison
+
+| Feature | V1 | V2 | V3 | V3.5 |
+|---------|----|----|-----|------|
+| RSS/Atom parsing | ✓ | ✓ | ✓ | ✓ |
+| Offline reading | ✓ | ✓ | ✓ | ✓ |
+| Categories | - | ✓ | ✓ | ✓ |
+| OPML import/export | - | ✓ | ✓ | ✓ |
+| Dark mode | - | ✓ | ✓ | ✓ |
+| PDF export | - | ✓ | ✓ | ✓ |
+| Reading stats | - | ✓ | ✓ | ✓ |
+| Podcast player | - | - | ✓ | ✓ |
+| Episode downloads | - | - | ✓ | ✓ |
+| Auto-refresh | - | - | ✓ | ✓ |
+| **AI TL;DR** | - | - | - | **✓** |
+| **AI summaries** | - | - | - | **✓** |
+| **Full-text extraction** | - | - | - | **✓** |
+
+---
+
+## 🔐 Privacy & Security
+
+**Your Data, Your Machine**
+- All data stored in local SQLite database
+- No cloud sync or tracking
+- API keys only used for AI features
+- Environment variable support for security
+
+**Network Usage**
+- Only fetches feeds you subscribe to
+- AI only when you explicitly request it
+- No telemetry or analytics
+
+---
+
+## 🗺️ Roadmap
+
+### Planned Features
+- [ ] Mobile companion app
+- [ ] Cloud sync (optional)
+- [ ] Video podcast support
+- [ ] Local AI models (no API costs)
+- [ ] Browser extension
+- [ ] Email digest feature
+- [ ] Collaborative feeds
+- [ ] Multi-language support
+
+---
+
+## 🤝 Contributing
+
+FeedMind is open for contributions!
+
+1. **Report Bugs** - Open an issue
+2. **Suggest Features** - Share your ideas
+3. **Submit PRs** - Code contributions welcome
+4. **Improve Docs** - Help others
+5. **Share Feedback** - Tell us what works
+
+---
+
+## 📝 License
+
+MIT License - see LICENSE file for details
+
+---
+
+**Made with 🧠 by the FeedMind community**
+
+*Smart feeds. Smarter reading.*
+
+---
+
+---
+
+# Other Projects in this Repository
+
+## Dash - Streamlit Data Dashboard
+
+Run the Streamlit dashboard to ingest Excel data, explore it, connect to a database, and export datasets:
 
 ```bash
-pip install -r requirements.txt  # or install streamlit, pandas, sqlalchemy directly
+pip install -r requirements.txt
 streamlit run dash.py
 ```
 
-### Send a report
-Inside the dashboard, open **Send report**, fill in your SMTP server details, recipients, and click **Send report** to email a CSV snapshot of the active dataset. Credentials are kept in session state only.
-
-## dash
-
-Run the Streamlit dashboard to ingest Excel data, explore it, connect to a database, and export datasets for other tools:
-
-```bash
-pip install -r requirements.txt  # or install streamlit, pandas, sqlalchemy directly
-streamlit run dash.py
-```
-
-### Send a report
+### Send a Report
 Inside the dashboard, open **Send report**, fill in your SMTP server details (STARTTLS, SSL, or none), recipients, and click **Test SMTP connection** to verify settings. Then choose **Send report** to email a CSV snapshot of the active dataset. Credentials are kept in session state only.
