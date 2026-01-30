@@ -54,7 +54,7 @@ class RSSDatabase(RSSDatabase_V2):
         logger.info(f"Database V3 initialized at {self.db_path}")
 
     def _migrate_to_v3(self, cursor):
-        """Add V3 columns for podcast support."""
+        """Add V3 columns for podcast support and AI features."""
         # Check articles table for podcast columns
         cursor.execute("PRAGMA table_info(articles)")
         columns = {row[1] for row in cursor.fetchall()}
@@ -67,6 +67,20 @@ class RSSDatabase(RSSDatabase_V2):
             cursor.execute("ALTER TABLE articles ADD COLUMN audio_length INTEGER")
         if 'duration_seconds' not in columns:
             cursor.execute("ALTER TABLE articles ADD COLUMN duration_seconds INTEGER")
+
+        # V3.5: Add full text and AI summary columns
+        if 'full_text' not in columns:
+            cursor.execute("ALTER TABLE articles ADD COLUMN full_text TEXT")
+        if 'full_text_extracted_date' not in columns:
+            cursor.execute("ALTER TABLE articles ADD COLUMN full_text_extracted_date TEXT")
+        if 'ai_summary' not in columns:
+            cursor.execute("ALTER TABLE articles ADD COLUMN ai_summary TEXT")
+        if 'ai_tldr' not in columns:
+            cursor.execute("ALTER TABLE articles ADD COLUMN ai_tldr TEXT")
+        if 'ai_key_points' not in columns:
+            cursor.execute("ALTER TABLE articles ADD COLUMN ai_key_points TEXT")  # JSON string
+        if 'ai_generated_date' not in columns:
+            cursor.execute("ALTER TABLE articles ADD COLUMN ai_generated_date TEXT")
 
         # Check feeds table for scheduling columns
         cursor.execute("PRAGMA table_info(feeds)")
@@ -282,6 +296,170 @@ class RSSDatabase(RSSDatabase_V2):
             self.mark_feed_as_podcast(feed_url, True)
 
         return cached_count
+
+    # Full-Text Article Methods
+
+    def store_full_text(self, article_id: int, full_text: str) -> bool:
+        """
+        Store extracted full text for an article.
+
+        Args:
+            article_id: Article ID
+            full_text: Extracted article text
+
+        Returns:
+            True if successful
+        """
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute("""
+                UPDATE articles
+                SET full_text = ?, full_text_extracted_date = ?
+                WHERE id = ?
+            """, (full_text, datetime.now().isoformat(), article_id))
+            self.conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            logger.error(f"Failed to store full text: {e}")
+            return False
+
+    def get_full_text(self, article_id: int) -> Optional[str]:
+        """Get stored full text for an article."""
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT full_text FROM articles WHERE id = ?
+        """, (article_id,))
+        row = cursor.fetchone()
+        return row[0] if row and row[0] else None
+
+    def has_full_text(self, article_id: int) -> bool:
+        """Check if article has full text extracted."""
+        full_text = self.get_full_text(article_id)
+        return full_text is not None and len(full_text) > 0
+
+    # AI Summary Methods
+
+    def store_ai_summary(self, article_id: int, summary: str,
+                        tldr: Optional[str] = None,
+                        key_points: Optional[List[str]] = None) -> bool:
+        """
+        Store AI-generated summary for an article.
+
+        Args:
+            article_id: Article ID
+            summary: Generated summary
+            tldr: TL;DR summary
+            key_points: List of key points
+
+        Returns:
+            True if successful
+        """
+        try:
+            import json
+
+            cursor = self.conn.cursor()
+
+            # Convert key points to JSON
+            key_points_json = json.dumps(key_points) if key_points else None
+
+            cursor.execute("""
+                UPDATE articles
+                SET ai_summary = ?,
+                    ai_tldr = ?,
+                    ai_key_points = ?,
+                    ai_generated_date = ?
+                WHERE id = ?
+            """, (summary, tldr, key_points_json,
+                  datetime.now().isoformat(), article_id))
+
+            self.conn.commit()
+            return cursor.rowcount > 0
+
+        except Exception as e:
+            logger.error(f"Failed to store AI summary: {e}")
+            return False
+
+    def get_ai_summary(self, article_id: int) -> Optional[Dict]:
+        """
+        Get AI-generated summary for an article.
+
+        Returns:
+            Dictionary with summary, tldr, key_points or None
+        """
+        try:
+            import json
+
+            cursor = self.conn.cursor()
+            cursor.execute("""
+                SELECT ai_summary, ai_tldr, ai_key_points, ai_generated_date
+                FROM articles WHERE id = ?
+            """, (article_id,))
+
+            row = cursor.fetchone()
+            if not row or not row[0]:
+                return None
+
+            key_points = None
+            if row[2]:
+                try:
+                    key_points = json.loads(row[2])
+                except:
+                    key_points = []
+
+            return {
+                'summary': row[0],
+                'tldr': row[1],
+                'key_points': key_points,
+                'generated_date': row[3]
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to get AI summary: {e}")
+            return None
+
+    def has_ai_summary(self, article_id: int) -> bool:
+        """Check if article has AI summary."""
+        summary = self.get_ai_summary(article_id)
+        return summary is not None
+
+    def get_articles_needing_extraction(self, limit: int = 10) -> List[Dict]:
+        """
+        Get articles that don't have full text extracted yet.
+
+        Args:
+            limit: Maximum articles to return
+
+        Returns:
+            List of article dictionaries
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT * FROM articles
+            WHERE full_text IS NULL AND link != ''
+            ORDER BY published DESC
+            LIMIT ?
+        """, (limit,))
+        return [dict(row) for row in cursor.fetchall()]
+
+    def get_articles_needing_summary(self, limit: int = 10) -> List[Dict]:
+        """
+        Get articles that have full text but no AI summary.
+
+        Args:
+            limit: Maximum articles to return
+
+        Returns:
+            List of article dictionaries
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT * FROM articles
+            WHERE full_text IS NOT NULL
+              AND ai_summary IS NULL
+            ORDER BY published DESC
+            LIMIT ?
+        """, (limit,))
+        return [dict(row) for row in cursor.fetchall()]
 
     # Compatibility wrapper methods
     def update_last_refresh(self, feed_url: str):

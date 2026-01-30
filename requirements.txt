@@ -18,3 +18,14 @@ pygame>=2.5.0
 
 # Audio metadata (optional, for accurate duration info)
 mutagen>=1.47.0
+
+# V3.5 dependencies for AI and article extraction
+# Full-text article extraction
+newspaper3k>=0.2.8
+
+# Alternative lightweight extraction (optional)
+trafilatura>=1.6.0
+
+# AI-powered summarization
+anthropic>=0.18.0  # Claude API
+openai>=1.12.0     # OpenAI API
