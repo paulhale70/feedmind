@@ -21,13 +21,20 @@ class RSSFeed:
 
     def __init__(self, title: str, link: str, description: str,
                  published: Optional[str] = None, feed_url: str = "",
-                 feed_title: str = ""):
+                 feed_title: str = "", audio_url: Optional[str] = None,
+                 audio_type: Optional[str] = None, audio_length: Optional[int] = None,
+                 duration_seconds: int = 0):
         self.title = title
         self.link = link
         self.description = description
         self.published = published
         self.feed_url = feed_url
         self.feed_title = feed_title  # Title of the feed itself
+        # Podcast/audio enclosure data
+        self.audio_url = audio_url
+        self.audio_type = audio_type
+        self.audio_length = audio_length  # File size in bytes
+        self.duration_seconds = duration_seconds  # Duration in seconds
 
     def __repr__(self):
         return f"RSSFeed(title='{self.title}', link='{self.link}')"
@@ -48,6 +55,43 @@ class RSSFetcher:
         # Remove HTML tags
         text = re.sub(r'<[^>]+>', '', text)
         return text.strip()
+
+    def _parse_duration(self, duration_str: str) -> int:
+        """
+        Parse iTunes duration to seconds.
+
+        Supports formats: HH:MM:SS, MM:SS, or just seconds.
+
+        Args:
+            duration_str: Duration string
+
+        Returns:
+            Duration in seconds
+        """
+        if not duration_str:
+            return 0
+
+        duration_str = duration_str.strip()
+
+        # Try parsing as seconds first
+        try:
+            return int(duration_str)
+        except ValueError:
+            pass
+
+        # Try parsing as HH:MM:SS or MM:SS
+        try:
+            parts = duration_str.split(':')
+            if len(parts) == 3:  # HH:MM:SS
+                hours, minutes, seconds = map(int, parts)
+                return hours * 3600 + minutes * 60 + seconds
+            elif len(parts) == 2:  # MM:SS
+                minutes, seconds = map(int, parts)
+                return minutes * 60 + seconds
+        except ValueError:
+            pass
+
+        return 0
 
     def _parse_rss(self, xml_content: bytes, url: str) -> list[RSSFeed]:
         """Parse RSS 2.0 format."""
@@ -71,13 +115,39 @@ class RSSFetcher:
                 # Clean description from HTML
                 description = self._clean_html(description)
 
+                # Extract audio enclosure (for podcasts)
+                audio_url = None
+                audio_type = None
+                audio_length = None
+                duration_seconds = 0
+
+                enclosure = item.find('enclosure')
+                if enclosure is not None:
+                    audio_url = enclosure.get('url')
+                    audio_type = enclosure.get('type')
+                    length_str = enclosure.get('length', '0')
+                    try:
+                        audio_length = int(length_str) if length_str else 0
+                    except ValueError:
+                        audio_length = 0
+
+                # Try to extract iTunes duration (format: HH:MM:SS or seconds)
+                itunes_ns = {'itunes': 'http://www.itunes.com/dtds/podcast-1.0.dtd'}
+                duration_elem = item.find('itunes:duration', itunes_ns)
+                if duration_elem is not None and duration_elem.text:
+                    duration_seconds = self._parse_duration(duration_elem.text)
+
                 articles.append(RSSFeed(
                     title=title,
                     link=link,
                     description=description,
                     published=pub_date,
                     feed_url=url,
-                    feed_title=feed_title
+                    feed_title=feed_title,
+                    audio_url=audio_url,
+                    audio_type=audio_type,
+                    audio_length=audio_length,
+                    duration_seconds=duration_seconds
                 ))
 
             return articles
@@ -139,13 +209,36 @@ class RSSFetcher:
                 # Clean description from HTML
                 description = self._clean_html(description)
 
+                # Extract audio enclosure (for podcasts in Atom)
+                audio_url = None
+                audio_type = None
+                audio_length = None
+                duration_seconds = 0
+
+                # Check for enclosure link
+                for link_el in entry.findall('link') + entry.findall('atom:link', namespace):
+                    rel = link_el.get('rel', '')
+                    if rel == 'enclosure':
+                        audio_url = link_el.get('href')
+                        audio_type = link_el.get('type')
+                        length_str = link_el.get('length', '0')
+                        try:
+                            audio_length = int(length_str) if length_str else 0
+                        except ValueError:
+                            audio_length = 0
+                        break
+
                 articles.append(RSSFeed(
                     title=title,
                     link=link,
                     description=description,
                     published=published,
                     feed_url=url,
-                    feed_title=feed_title
+                    feed_title=feed_title,
+                    audio_url=audio_url,
+                    audio_type=audio_type,
+                    audio_length=audio_length,
+                    duration_seconds=duration_seconds
                 ))
 
             return articles

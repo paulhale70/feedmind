@@ -12,3 +12,9 @@ reportlab>=4.0.0
 # Desktop notifications
 plyer>=2.1.0
 
+# V3 dependencies for podcast support
+# Audio playback
+pygame>=2.5.0
+
+# Audio metadata (optional, for accurate duration info)
+mutagen>=1.47.0
