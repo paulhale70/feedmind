@@ -1,6 +1,6 @@
 """
-RSSreaderV2 - Enhanced RSS Feed Reader with Dark Mode, Categories, and Statistics
-Main application file that integrates all V2 features.
+FeedMind 🧠 - AI-Powered RSS Feed Reader with Podcast Support
+Main application file integrating V2, V3, and V3.5 features.
 """
 
 import tkinter as tk
@@ -10,23 +10,39 @@ import threading
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict
 from rss_core import RSSFetcher
-from rss_database_v2 import RSSDatabase
+from rss_database_v3 import RSSDatabase  # V3 database with podcast and AI support
 from rss_opml import OPMLHandler
 from rss_themes import LightTheme, DarkTheme, Theme
 from rss_pdf_exporter import PDFExporter
 from rss_notifications import NotificationManager
 
+# Optional V3 features (podcast support)
+try:
+    from rss_audio_player_ui import AudioPlayerWidget
+    PODCAST_SUPPORT = True
+except ImportError:
+    PODCAST_SUPPORT = False
 
-class RSSReaderV2:
-    """Main RSS Reader V2 Application with enhanced features."""
+# Optional V3.5 features (AI summarization and extraction)
+try:
+    from rss_ai_summarizer import AISummarizer, AIProvider
+    from rss_article_extractor import ArticleExtractor
+    from rss_api_config import APIConfigManager
+    AI_SUPPORT = True
+except ImportError:
+    AI_SUPPORT = False
+
+
+class FeedMind:
+    """FeedMind - AI-Powered RSS Reader with Podcast Support."""
 
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("RSSreaderV2")
+        self.root.title("FeedMind 🧠")
         self.root.geometry("1280x800")
 
         # Initialize core components
-        self.db = RSSDatabase("rss_reader.db")
+        self.db = RSSDatabase("rss_reader_v3.db")  # V3 database
         self.fetcher = RSSFetcher(timeout=15)
         self.notifier = NotificationManager()
 
@@ -50,6 +66,21 @@ class RSSReaderV2:
         self.feed_urls = []  # Maps feed listbox index to URL
         self.category_ids = []  # Maps category listbox index to ID
 
+        # V3 Podcast support
+        self.audio_player = None
+        if PODCAST_SUPPORT:
+            # Audio player widget will be created in _create_ui
+            pass
+
+        # V3.5 AI support
+        self.ai_summarizer = None
+        self.article_extractor = None
+        self.api_config = None
+        if AI_SUPPORT:
+            self.api_config = APIConfigManager(self.db)
+            self.article_extractor = ArticleExtractor()
+            # AI summarizer will be initialized when needed (requires API key)
+
         # Build UI
         self._create_menu()
         self._create_ui()
@@ -65,6 +96,9 @@ class RSSReaderV2:
 
         # Bind window close event
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
+
+        # Show feature status in status bar
+        self._show_startup_message()
 
     def _load_theme_preference(self):
         """Load saved theme preference."""
@@ -109,6 +143,27 @@ class RSSReaderV2:
         manage_menu.add_command(label="Preferences...", command=self._show_preferences)
         manage_menu.add_separator()
         manage_menu.add_command(label="Clear Old Articles", command=self._clear_cache)
+
+        # AI menu (V3.5 features)
+        if AI_SUPPORT:
+            ai_menu = tk.Menu(menubar, tearoff=0)
+            menubar.add_cascade(label="AI ✨", menu=ai_menu)
+            ai_menu.add_command(label="Extract Full Text", command=self._extract_full_text)
+            ai_menu.add_command(label="Generate Summary", command=self._generate_summary)
+            ai_menu.add_command(label="Generate TL;DR", command=self._generate_tldr)
+            ai_menu.add_separator()
+            ai_menu.add_command(label="Configure API Keys...", command=self._configure_ai)
+            ai_menu.add_separator()
+            ai_menu.add_command(label="About AI Features", command=self._about_ai_features)
+
+        # Help menu
+        help_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Help", menu=help_menu)
+        help_menu.add_command(label="About FeedMind", command=self._show_about)
+        if PODCAST_SUPPORT:
+            help_menu.add_command(label="Podcast Support ✓", state=tk.DISABLED)
+        if AI_SUPPORT:
+            help_menu.add_command(label="AI Features ✓", state=tk.DISABLED)
 
     def _create_ui(self):
         """Create the main user interface."""
@@ -1034,6 +1089,299 @@ class RSSReaderV2:
         """Update status label."""
         self.status_label.config(text=message)
 
+    # V3.5 AI Features
+
+    def _show_startup_message(self):
+        """Show startup message with available features."""
+        features = []
+        if PODCAST_SUPPORT:
+            features.append("Podcasts")
+        if AI_SUPPORT:
+            features.append("AI")
+
+        if features:
+            self._set_status(f"FeedMind ready - {', '.join(features)} available")
+        else:
+            self._set_status("FeedMind ready - Base features loaded")
+
+    def _extract_full_text(self):
+        """Extract full text of selected article."""
+        if not AI_SUPPORT:
+            messagebox.showinfo("Not Available", "AI features not installed.\n\nInstall with: pip install newspaper3k")
+            return
+
+        if not self.selected_article_id:
+            messagebox.showwarning("No Article", "Please select an article first")
+            return
+
+        # Get article
+        cursor = self.db.conn.cursor()
+        cursor.execute("SELECT title, link, full_text FROM articles WHERE id = ?", (self.selected_article_id,))
+        row = cursor.fetchone()
+
+        if not row:
+            return
+
+        title, link, existing_full_text = row[0], row[1], row[2]
+
+        if existing_full_text:
+            messagebox.showinfo("Already Extracted", f"Full text already extracted for:\n{title}\n\n{len(existing_full_text)} characters")
+            return
+
+        self._set_status(f"Extracting full text from {link}...")
+
+        # Extract in background thread
+        def extract():
+            try:
+                result = self.article_extractor.extract(link)
+                if result and result['text']:
+                    # Store in database
+                    self.db.store_full_text(self.selected_article_id, result['text'])
+                    self.root.after(0, lambda: messagebox.showinfo(
+                        "Success",
+                        f"Extracted {len(result['text'])} characters\nMethod: {result['method']}"
+                    ))
+                    self.root.after(0, lambda: self._set_status("Full text extracted"))
+                else:
+                    self.root.after(0, lambda: messagebox.showerror(
+                        "Failed",
+                        "Could not extract full text from this article"
+                    ))
+                    self.root.after(0, lambda: self._set_status("Extraction failed"))
+            except Exception as e:
+                self.root.after(0, lambda: messagebox.showerror("Error", f"Extraction failed: {e}"))
+                self.root.after(0, lambda: self._set_status("Ready"))
+
+        threading.Thread(target=extract, daemon=True).start()
+
+    def _generate_summary(self):
+        """Generate AI summary of selected article."""
+        if not AI_SUPPORT:
+            messagebox.showinfo("Not Available", "AI features not installed.\n\nInstall with: pip install anthropic")
+            return
+
+        if not self.selected_article_id:
+            messagebox.showwarning("No Article", "Please select an article first")
+            return
+
+        # Check for API key
+        api_key = self.api_config.get_api_key("claude")
+        if not api_key:
+            messagebox.showwarning(
+                "API Key Required",
+                "Claude API key not configured.\n\nSet environment variable:\nexport RSS_API_KEY_CLAUDE='your-key'\n\nOr use AI → Configure API Keys"
+            )
+            return
+
+        # Get article text
+        cursor = self.db.conn.cursor()
+        cursor.execute("SELECT title, description, full_text, ai_summary FROM articles WHERE id = ?", (self.selected_article_id,))
+        row = cursor.fetchone()
+
+        if not row:
+            return
+
+        title, description, full_text, existing_summary = row
+
+        if existing_summary:
+            summary_data = self.db.get_ai_summary(self.selected_article_id)
+            msg = f"Summary for: {title}\n\n"
+            msg += f"TL;DR: {summary_data['tldr']}\n\n"
+            msg += f"Summary:\n{summary_data['summary']}\n\n"
+            if summary_data['key_points']:
+                msg += "Key Points:\n"
+                for i, point in enumerate(summary_data['key_points'], 1):
+                    msg += f"{i}. {point}\n"
+            messagebox.showinfo("AI Summary", msg)
+            return
+
+        text = full_text or description
+        if not text or len(text) < 100:
+            messagebox.showwarning("No Content", "Article text too short to summarize.\n\nTry AI → Extract Full Text first.")
+            return
+
+        self._set_status("Generating AI summary...")
+
+        # Generate in background
+        def generate():
+            try:
+                if not self.ai_summarizer:
+                    self.ai_summarizer = AISummarizer(provider=AIProvider.CLAUDE, api_key=api_key)
+
+                result = self.ai_summarizer.summarize_article(text)
+
+                if result:
+                    # Store in database
+                    self.db.store_ai_summary(
+                        self.selected_article_id,
+                        result['summary'],
+                        result['tldr'],
+                        result['key_points']
+                    )
+
+                    msg = f"Summary for: {title}\n\n"
+                    msg += f"TL;DR: {result['tldr']}\n\n"
+                    msg += f"Summary:\n{result['summary']}\n\n"
+                    if result['key_points']:
+                        msg += "Key Points:\n"
+                        for i, point in enumerate(result['key_points'], 1):
+                            msg += f"{i}. {point}\n"
+
+                    self.root.after(0, lambda: messagebox.showinfo("AI Summary", msg))
+                    self.root.after(0, lambda: self._set_status("Summary generated"))
+                else:
+                    self.root.after(0, lambda: messagebox.showerror("Failed", "Could not generate summary"))
+                    self.root.after(0, lambda: self._set_status("Ready"))
+            except Exception as e:
+                self.root.after(0, lambda: messagebox.showerror("Error", f"Summary generation failed: {e}"))
+                self.root.after(0, lambda: self._set_status("Ready"))
+
+        threading.Thread(target=generate, daemon=True).start()
+
+    def _generate_tldr(self):
+        """Generate quick TL;DR of selected article."""
+        if not AI_SUPPORT:
+            messagebox.showinfo("Not Available", "AI features not installed.\n\nInstall with: pip install anthropic")
+            return
+
+        if not self.selected_article_id:
+            messagebox.showwarning("No Article", "Please select an article first")
+            return
+
+        # Check for existing summary
+        summary_data = self.db.get_ai_summary(self.selected_article_id)
+        if summary_data and summary_data['tldr']:
+            cursor = self.db.conn.cursor()
+            cursor.execute("SELECT title FROM articles WHERE id = ?", (self.selected_article_id,))
+            title = cursor.fetchone()[0]
+            messagebox.showinfo("TL;DR", f"{title}\n\n{summary_data['tldr']}")
+            return
+
+        # Generate full summary which includes TL;DR
+        self._generate_summary()
+
+    def _configure_ai(self):
+        """Configure AI API keys."""
+        if not AI_SUPPORT:
+            messagebox.showinfo("Not Available", "AI features not installed")
+            return
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Configure AI API Keys")
+        dialog.geometry("500x400")
+
+        tk.Label(dialog, text="API Configuration", font=("Arial", 14, "bold")).pack(pady=10)
+
+        # Instructions
+        frame = tk.Frame(dialog)
+        frame.pack(pady=10, padx=20, fill=tk.BOTH, expand=True)
+
+        instructions = """FeedMind supports AI-powered summarization using:
+
+• Claude (Anthropic) - Recommended
+• OpenAI GPT
+
+To use AI features, you need an API key.
+
+Get API Keys:
+• Claude: https://console.anthropic.com/
+• OpenAI: https://platform.openai.com/api-keys
+
+Configure via Environment Variable (recommended):
+export RSS_API_KEY_CLAUDE="your-api-key-here"
+export RSS_API_KEY_OPENAI="your-openai-key"
+
+Or store in database (less secure):"""
+
+        tk.Label(frame, text=instructions, justify=tk.LEFT).pack(anchor=tk.W)
+
+        # Claude API key
+        tk.Label(frame, text="Claude API Key:").pack(anchor=tk.W, pady=(10, 0))
+        claude_entry = tk.Entry(frame, width=50, show="*")
+        claude_entry.pack(fill=tk.X)
+
+        current_claude = self.api_config.get_api_key("claude")
+        if current_claude:
+            claude_entry.insert(0, current_claude)
+
+        # OpenAI API key
+        tk.Label(frame, text="OpenAI API Key:").pack(anchor=tk.W, pady=(10, 0))
+        openai_entry = tk.Entry(frame, width=50, show="*")
+        openai_entry.pack(fill=tk.X)
+
+        current_openai = self.api_config.get_api_key("openai")
+        if current_openai:
+            openai_entry.insert(0, current_openai)
+
+        # Save button
+        def save_keys():
+            claude_key = claude_entry.get().strip()
+            openai_key = openai_entry.get().strip()
+
+            if claude_key:
+                self.api_config.set_api_key("claude", claude_key)
+            if openai_key:
+                self.api_config.set_api_key("openai", openai_key)
+
+            messagebox.showinfo("Success", "API keys saved")
+            dialog.destroy()
+
+        tk.Button(frame, text="Save Keys", command=save_keys).pack(pady=10)
+
+    def _about_ai_features(self):
+        """Show information about AI features."""
+        msg = """FeedMind AI Features (V3.5)
+
+✨ TL;DR Generation
+Ultra-quick 1-2 sentence summaries
+
+✨ Smart Summaries
+Comprehensive article overviews (200 words)
+
+✨ Key Points Extraction
+Bulleted list of main takeaways
+
+✨ Full-Text Extraction
+Fetch complete articles from web pages
+
+💰 Cost-Effective
+~$0.25 per 1,000 articles with Claude
+Summaries are cached - never re-process
+
+🔒 Privacy
+API keys stored securely
+Only sent to chosen AI provider
+Your data stays local
+
+To use AI features:
+1. Install: pip install anthropic newspaper3k
+2. Get API key from console.anthropic.com
+3. Configure in AI → Configure API Keys
+4. Select an article and use AI menu!"""
+
+        messagebox.showinfo("About AI Features", msg)
+
+    def _show_about(self):
+        """Show about dialog."""
+        features = ["Categories & OPML", "Dark Mode", "Reading Stats", "PDF Export"]
+        if PODCAST_SUPPORT:
+            features.append("🎙️ Podcast Support")
+        if AI_SUPPORT:
+            features.append("🤖 AI Summaries")
+
+        msg = f"""FeedMind 🧠 v3.5
+
+AI-Powered RSS Reader with Podcast Support
+
+Features:
+{chr(10).join('• ' + f for f in features)}
+
+Smart feeds. Smarter reading.
+
+Made with 🧠 by the FeedMind community"""
+
+        messagebox.showinfo("About FeedMind", msg)
+
     def _on_closing(self):
         """Handle window close event."""
         if self.auto_refresh_job:
@@ -1429,9 +1777,9 @@ class PreferencesDialog:
 
 
 def main():
-    """Main entry point."""
+    """Main entry point for FeedMind."""
     root = tk.Tk()
-    app = RSSReaderV2(root)
+    app = FeedMind(root)
     root.mainloop()
 
 
