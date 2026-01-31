@@ -31,8 +31,8 @@ Most RSS readers just show you articles. **FeedMind helps you understand them.**
 # Install base features
 pip install -r requirements.txt
 
-# Run FeedMind V2 (full-featured, no API needed)
-python rss_reader_v2.py
+# Run FeedMind v3.5 (full-featured, no API needed)
+python feedmind.py
 ```
 
 ### Optional AI Features
@@ -60,44 +60,44 @@ BBC News: http://feeds.bbci.co.uk/news/rss.xml
 
 ---
 
-## 📦 Feature Versions
+## 📦 FeedMind v3.5 - Complete Feature Set
 
-### V1: Basic RSS Reader
+**Main Application:** `feedmind.py` (All features in one file!)
+
+### Core Features (V1)
 - ✓ RSS/Atom feed parsing
 - ✓ Article caching & offline reading
 - ✓ Read/unread tracking
 - ✓ Favorites & search
 - ✓ Auto-refresh
 
-**Run V1:**
-```bash
-python rss_reader.py
-```
-
-### V2: Enhanced Organization
+### Organization & UI (V2)
 - ✓ **Categories & folders**
 - ✓ **OPML import/export**
 - ✓ **Dark mode** with themes
 - ✓ **Reading statistics**
 - ✓ **PDF export**
 - ✓ **Desktop notifications**
-- ✓ **Keyboard shortcuts** (Ctrl+T, Ctrl+S, etc.)
+- ✓ **Keyboard shortcuts** (Ctrl+T, Ctrl+S, j/k navigation, etc.)
 
-**Run V2:**
-```bash
-python rss_reader_v2.py
-```
-
-### V3: Podcast Support
+### Podcast Features (V3)
 - ✓ **Auto-detect podcast feeds**
 - ✓ **Built-in audio player** with controls
 - ✓ **Download episodes** for offline listening
 - ✓ **Smart auto-refresh** based on feed activity
 - ✓ **Background updates**
+- ✓ **Playback speed control** (0.5x to 2.0x)
 
-**Test V3:**
+### AI Features (V3.5)
+- ✓ **AI-powered summaries** (Claude/OpenAI)
+- ✓ **TL;DR generation** (1-2 sentence summaries)
+- ✓ **Key points extraction** (bulleted highlights)
+- ✓ **Full-text article extraction** (complete articles)
+- ✓ **Smart caching** (never re-process articles)
+
+**Run FeedMind v3.5:**
 ```bash
-python test_v3_features.py
+python feedmind.py
 ```
 
 ### V3.5: AI-Powered ⭐ Latest
