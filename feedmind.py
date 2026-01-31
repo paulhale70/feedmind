@@ -25,6 +25,7 @@ from tkinter import ttk, messagebox, filedialog, simpledialog
 import webbrowser
 import threading
 import os
+import logging
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict
 from rss_core import RSSFetcher
@@ -52,6 +53,51 @@ except ImportError:
     AI_SUPPORT = False
 
 
+def setup_logging(enabled: bool = True, log_level: str = "INFO") -> logging.Logger:
+    """
+    Configure logging for FeedMind.
+
+    Args:
+        enabled: Whether to enable file logging
+        log_level: Logging level (DEBUG, INFO, WARNING, ERROR)
+
+    Returns:
+        Configured logger instance
+    """
+    logger = logging.getLogger("FeedMind")
+    logger.setLevel(getattr(logging, log_level.upper()))
+
+    # Remove existing handlers
+    logger.handlers.clear()
+
+    if enabled:
+        # File handler - writes to feedmind.log
+        file_handler = logging.FileHandler("feedmind.log", encoding='utf-8')
+        file_handler.setLevel(logging.DEBUG)
+
+        # Console handler - for debugging
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.WARNING)
+
+        # Formatter
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        file_handler.setFormatter(formatter)
+        console_handler.setFormatter(formatter)
+
+        logger.addHandler(file_handler)
+        logger.addHandler(console_handler)
+
+        logger.info("=" * 60)
+        logger.info(f"FeedMind v{__version__} - Logging started")
+        logger.info(f"Log level: {log_level.upper()}")
+        logger.info("=" * 60)
+
+    return logger
+
+
 class FeedMind:
     """FeedMind - AI-Powered RSS Reader with Podcast Support."""
 
@@ -60,14 +106,24 @@ class FeedMind:
         self.root.title("FeedMind 🧠")
         self.root.geometry("1280x800")
 
+        # Initialize logging
+        logging_enabled = True  # Will load from settings after DB init
+        self.logger = setup_logging(enabled=logging_enabled, log_level="INFO")
+
         # Initialize core components
         self.db = RSSDatabase("feedmind.db")
         self.fetcher = RSSFetcher(timeout=15)
         self.notifier = NotificationManager()
 
-        # Load notification preference
+        # Load preferences
         notifications_enabled = self.db.get_setting("notifications_enabled", "true") == "true"
         self.notifier.set_enabled(notifications_enabled)
+
+        # Update logging based on saved preference
+        logging_enabled = self.db.get_setting("logging_enabled", "true") == "true"
+        log_level = self.db.get_setting("log_level", "INFO")
+        self.logger = setup_logging(enabled=logging_enabled, log_level=log_level)
+        self.logger.info(f"FeedMind initialized - Database: feedmind.db")
 
         # Theme management
         self.current_theme: Theme = LightTheme()
@@ -212,7 +268,7 @@ class FeedMind:
 
         self.url_entry = tk.Entry(add_frame)
         self.url_entry.pack(fill=tk.X, pady=2)
-        self.url_entry.bind('<Return>', lambda e: self._add_feed())
+        self.url_entry.bind('<Return>', lambda e: (self._add_feed(), "break")[1])
 
         btn_frame = tk.Frame(add_frame)
         btn_frame.pack(fill=tk.X, pady=2)
@@ -295,7 +351,7 @@ class FeedMind:
 
         self.search_entry = tk.Entry(search_frame)
         self.search_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
-        self.search_entry.bind('<Return>', lambda e: self._search())
+        self.search_entry.bind('<Return>', lambda e: (self._search(), "break")[1])
 
         self.search_btn = tk.Button(search_frame, text="Search", command=self._search)
         self.search_btn.pack(side=tk.LEFT, padx=(0, 2))
@@ -608,14 +664,18 @@ class FeedMind:
         """Add feed to database (must be called from main thread)."""
         try:
             if self.db.add_feed(url, title):
+                self.logger.info(f"Added new feed: {title} ({url})")
+                self.logger.info(f"Caching {len(articles)} articles for {title}")
                 self.db.cache_articles(articles, url)
                 self.url_entry.delete(0, tk.END)
                 self._load_feeds()
                 self._update_view()
                 self._set_status(f"Added: {title}")
             else:
+                self.logger.warning(f"Feed already exists: {url}")
                 self._set_status("Feed already exists")
         except Exception as e:
+            self.logger.error(f"Error adding feed {url}: {str(e)}", exc_info=True)
             self._set_status(f"Error: {str(e)}")
         finally:
             self.url_entry.config(state=tk.NORMAL)
@@ -640,6 +700,7 @@ class FeedMind:
             return
 
         if messagebox.askyesno("Confirm", f"Remove feed '{feed['title']}'?"):
+            self.logger.info(f"Removing feed: {feed['title']} ({url})")
             self.db.remove_feed(url)
             self._load_feeds()
             self._update_view()
@@ -898,9 +959,11 @@ class FeedMind:
         # Check if already downloaded
         existing_path = self.db.get_download_path(self.selected_article_id)
         if existing_path and os.path.exists(existing_path):
+            self.logger.info(f"Episode already downloaded: {title}")
             messagebox.showinfo("Already Downloaded", "This episode is already downloaded")
             return
 
+        self.logger.info(f"Starting podcast download: {title} from {audio_url}")
         self._set_status(f"Downloading: {title}...")
 
         # Download with progress callback
@@ -934,14 +997,17 @@ class FeedMind:
                         duration
                     )
 
+                    self.logger.info(f"Podcast download complete: {title} ({file_size // 1024 // 1024} MB)")
                     self.root.after(0, lambda: messagebox.showinfo("Success", f"Episode downloaded!\n\n{file_size // 1024 // 1024} MB"))
                     self.root.after(0, lambda: self._set_status("Download complete"))
                     # Reload article to show player with downloaded episode
                     self.root.after(0, lambda: self._on_article_select(None))
                 except Exception as e:
+                    self.logger.error(f"Failed to save podcast download info: {e}", exc_info=True)
                     self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to save download info: {e}"))
                     self.root.after(0, lambda: self._set_status("Ready"))
             else:
+                self.logger.error(f"Podcast download failed for {title}: {error}")
                 self.root.after(0, lambda: messagebox.showerror("Failed", f"Download failed: {error}"))
                 self.root.after(0, lambda: self._set_status("Download failed"))
 
@@ -1799,6 +1865,12 @@ class PreferencesDialog:
 
         self._create_general_tab(general_frame)
 
+        # Logging tab
+        logging_frame = tk.Frame(notebook)
+        notebook.add(logging_frame, text="Logging")
+
+        self._create_logging_tab(logging_frame)
+
         # Buttons
         btn_frame = tk.Frame(self.dialog)
         btn_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
@@ -1901,6 +1973,72 @@ class PreferencesDialog:
         tk.Label(parent, text=f"\nDatabase Location:", font=("Arial", 10, "bold")).pack(anchor=tk.W, padx=10)
         tk.Label(parent, text=f"  {self.db.db_path}", fg="gray").pack(anchor=tk.W, padx=10)
 
+    def _create_logging_tab(self, parent):
+        """Create logging settings tab."""
+        tk.Label(parent, text="Application Logging", font=("Arial", 11, "bold")).pack(anchor=tk.W, padx=10, pady=(10, 5))
+
+        # Enable/disable logging
+        self.logging_enabled_var = tk.BooleanVar()
+        current_value = self.db.get_setting("logging_enabled", "true") == "true"
+        self.logging_enabled_var.set(current_value)
+
+        tk.Checkbutton(
+            parent,
+            text="Enable local logging",
+            variable=self.logging_enabled_var
+        ).pack(anchor=tk.W, padx=20, pady=5)
+
+        # Description
+        desc_text = (
+            "When enabled, FeedMind will log activity to feedmind.log\n"
+            "Logs include:\n"
+            "• Feed additions and refreshes\n"
+            "• Errors and warnings\n"
+            "• Podcast downloads\n"
+            "• AI operations\n"
+        )
+        tk.Label(parent, text=desc_text, justify=tk.LEFT, fg="gray").pack(anchor=tk.W, padx=20, pady=5)
+
+        # Log level selection
+        tk.Label(parent, text="Log Level:", font=("Arial", 10, "bold")).pack(anchor=tk.W, padx=20, pady=(10, 5))
+
+        self.log_level_var = tk.StringVar()
+        current_level = self.db.get_setting("log_level", "INFO")
+        self.log_level_var.set(current_level)
+
+        level_frame = tk.Frame(parent)
+        level_frame.pack(anchor=tk.W, padx=40, pady=5)
+
+        levels = [("DEBUG", "Detailed debugging info"),
+                  ("INFO", "General informational messages"),
+                  ("WARNING", "Warning messages only"),
+                  ("ERROR", "Error messages only")]
+
+        for level, desc in levels:
+            rb = tk.Radiobutton(level_frame, text=f"{level} - {desc}",
+                               variable=self.log_level_var, value=level)
+            rb.pack(anchor=tk.W, pady=2)
+
+        # Log file location
+        tk.Label(parent, text="\nLog File Location:", font=("Arial", 10, "bold")).pack(anchor=tk.W, padx=20)
+        tk.Label(parent, text="  feedmind.log (in application directory)", fg="gray").pack(anchor=tk.W, padx=20)
+
+        # View log button
+        tk.Button(parent, text="View Log File", command=self._view_log).pack(anchor=tk.W, padx=20, pady=10)
+
+    def _view_log(self):
+        """Open log file in default text editor."""
+        import webbrowser
+        import os
+        log_path = os.path.abspath("feedmind.log")
+        if os.path.exists(log_path):
+            try:
+                webbrowser.open(f"file://{log_path}")
+            except:
+                messagebox.showinfo("Log File", f"Log file location:\n{log_path}")
+        else:
+            messagebox.showinfo("No Log File", "No log file exists yet.\nLogs will be created when logging is enabled.")
+
     def _test_notification(self):
         """Send a test notification."""
         self.notifier.notify_custom(
@@ -1913,10 +2051,14 @@ class PreferencesDialog:
         # Save notification setting
         self.db.set_setting("notifications_enabled", "true" if self.notif_enabled_var.get() else "false")
 
+        # Save logging settings
+        self.db.set_setting("logging_enabled", "true" if self.logging_enabled_var.get() else "false")
+        self.db.set_setting("log_level", self.log_level_var.get())
+
         # Apply changes
         self.callback()
 
-        messagebox.showinfo("Success", "Preferences saved")
+        messagebox.showinfo("Success", "Preferences saved\n\nRestart FeedMind to apply logging changes.")
         self.dialog.destroy()
 
 
