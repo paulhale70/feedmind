@@ -34,6 +34,7 @@ from rss_opml import OPMLHandler
 from rss_themes import LightTheme, DarkTheme, Theme
 from rss_pdf_exporter import PDFExporter
 from rss_notifications import NotificationManager
+from rss_feed_finder import RSSFeedFinder
 
 # Optional V3 features (podcast support)
 try:
@@ -269,6 +270,10 @@ class FeedMind:
         self.url_entry = tk.Entry(add_frame)
         self.url_entry.pack(fill=tk.X, pady=2)
         self.url_entry.bind('<Return>', lambda e: (self._add_feed(), "break")[1])
+
+        # Find Feed button
+        self.find_feed_btn = tk.Button(add_frame, text="🔍 Find Feed from URL", command=self._find_feeds)
+        self.find_feed_btn.pack(fill=tk.X, pady=2)
 
         btn_frame = tk.Frame(add_frame)
         btn_frame.pack(fill=tk.X, pady=2)
@@ -687,6 +692,62 @@ class FeedMind:
         self.url_entry.config(state=tk.NORMAL)
         self.add_btn.config(state=tk.NORMAL)
         messagebox.showerror("Error", f"Failed to add feed:\n{error}")
+
+    def _find_feeds(self):
+        """Find RSS feeds from a website URL."""
+        url = self.url_entry.get().strip()
+        if not url:
+            messagebox.showinfo("Enter URL", "Please enter a website URL first")
+            return
+
+        self.logger.info(f"Finding RSS feeds for: {url}")
+        self._set_status("Finding feeds...")
+        self.find_feed_btn.config(state=tk.DISABLED)
+
+        def find_in_thread():
+            try:
+                finder = RSSFeedFinder(timeout=10)
+                feeds = finder.find_feeds(url)
+                self.root.after(0, lambda: self._show_found_feeds(url, feeds))
+            except Exception as e:
+                self.logger.error(f"Feed discovery failed for {url}: {e}", exc_info=True)
+                self.root.after(0, lambda: self._on_find_feeds_failed(str(e)))
+
+        threading.Thread(target=find_in_thread, daemon=True).start()
+
+    def _show_found_feeds(self, original_url: str, feeds: List[Dict[str, str]]):
+        """Show dialog with discovered feeds."""
+        self.find_feed_btn.config(state=tk.NORMAL)
+
+        if not feeds:
+            self.logger.warning(f"No feeds found for {original_url}")
+            self._set_status("No feeds found")
+            messagebox.showinfo(
+                "No Feeds Found",
+                f"Could not find any RSS/Atom feeds at:\n{original_url}\n\n"
+                "Try visiting the site and looking for an RSS icon or 'Subscribe' link."
+            )
+            return
+
+        if feeds[0].get('type') == 'Error':
+            self._on_find_feeds_failed(feeds[0]['title'])
+            return
+
+        self.logger.info(f"Found {len(feeds)} feed(s) for {original_url}")
+        self._set_status(f"Found {len(feeds)} feed(s)")
+
+        # Show feed selection dialog
+        FeedFinderDialog(self.root, feeds, self.url_entry, self.logger)
+
+    def _on_find_feeds_failed(self, error: str):
+        """Handle feed discovery failure."""
+        self.find_feed_btn.config(state=tk.NORMAL)
+        self._set_status("Feed discovery failed")
+        messagebox.showerror(
+            "Discovery Failed",
+            f"Could not find feeds:\n{error}\n\n"
+            "Try entering the RSS feed URL directly."
+        )
 
     def _remove_feed(self):
         """Remove selected feed."""
@@ -2059,6 +2120,149 @@ class PreferencesDialog:
         self.callback()
 
         messagebox.showinfo("Success", "Preferences saved\n\nRestart FeedMind to apply logging changes.")
+        self.dialog.destroy()
+
+
+class FeedFinderDialog:
+    """Dialog for selecting discovered RSS feeds."""
+
+    def __init__(self, parent, feeds: List[Dict[str, str]], url_entry: tk.Entry, logger):
+        """
+        Initialize feed finder dialog.
+
+        Args:
+            parent: Parent window
+            feeds: List of discovered feeds
+            url_entry: URL entry widget to populate with selected feed
+            logger: Logger instance
+        """
+        self.feeds = feeds
+        self.url_entry = url_entry
+        self.logger = logger
+
+        self.dialog = tk.Toplevel(parent)
+        self.dialog.title("RSS Feed Discovery")
+        self.dialog.geometry("650x400")
+        self.dialog.transient(parent)
+        self.dialog.grab_set()
+
+        # Header
+        header = tk.Frame(self.dialog, bg="#2E7D32", height=60)
+        header.pack(fill=tk.X)
+        header.pack_propagate(False)
+
+        tk.Label(
+            header,
+            text=f"🔍 Found {len(feeds)} RSS Feed(s)",
+            font=("Arial", 14, "bold"),
+            bg="#2E7D32",
+            fg="white"
+        ).pack(pady=15)
+
+        # Instructions
+        tk.Label(
+            self.dialog,
+            text="Select a feed below to add it to FeedMind:",
+            font=("Arial", 10)
+        ).pack(pady=10, padx=10, anchor=tk.W)
+
+        # Feed list
+        list_frame = tk.Frame(self.dialog)
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
+
+        # Scrollbar
+        scrollbar = tk.Scrollbar(list_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Listbox
+        self.feed_listbox = tk.Listbox(
+            list_frame,
+            yscrollcommand=scrollbar.set,
+            font=("Arial", 10),
+            height=10
+        )
+        self.feed_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=self.feed_listbox.yview)
+
+        # Populate feeds
+        for feed in feeds:
+            display_text = f"{feed['title']} ({feed['type']})"
+            self.feed_listbox.insert(tk.END, display_text)
+
+        # Select first feed by default
+        if feeds:
+            self.feed_listbox.selection_set(0)
+
+        # Bind double-click
+        self.feed_listbox.bind('<Double-1>', lambda e: self._select_feed())
+
+        # Feed URL preview
+        self.preview_frame = tk.Frame(self.dialog, bg="#F5F5F5", relief=tk.SUNKEN, borderwidth=1)
+        self.preview_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+
+        tk.Label(
+            self.preview_frame,
+            text="Feed URL:",
+            font=("Arial", 9, "bold"),
+            bg="#F5F5F5"
+        ).pack(anchor=tk.W, padx=5, pady=(5, 0))
+
+        self.url_label = tk.Label(
+            self.preview_frame,
+            text="",
+            font=("Arial", 9),
+            bg="#F5F5F5",
+            fg="#0066CC",
+            wraplength=600,
+            justify=tk.LEFT
+        )
+        self.url_label.pack(anchor=tk.W, padx=5, pady=(0, 5))
+
+        # Update preview when selection changes
+        self.feed_listbox.bind('<<ListboxSelect>>', self._update_preview)
+        self._update_preview()
+
+        # Buttons
+        btn_frame = tk.Frame(self.dialog)
+        btn_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+
+        tk.Button(
+            btn_frame,
+            text="Select Feed",
+            command=self._select_feed,
+            bg="#2E7D32",
+            fg="white",
+            width=15
+        ).pack(side=tk.LEFT, padx=2)
+
+        tk.Button(
+            btn_frame,
+            text="Cancel",
+            command=self.dialog.destroy,
+            width=15
+        ).pack(side=tk.RIGHT, padx=2)
+
+    def _update_preview(self, event=None):
+        """Update URL preview when selection changes."""
+        selection = self.feed_listbox.curselection()
+        if selection:
+            feed = self.feeds[selection[0]]
+            self.url_label.config(text=feed['url'])
+
+    def _select_feed(self):
+        """Select chosen feed and populate URL entry."""
+        selection = self.feed_listbox.curselection()
+        if not selection:
+            return
+
+        feed = self.feeds[selection[0]]
+        self.logger.info(f"User selected feed: {feed['title']} - {feed['url']}")
+
+        # Populate URL entry
+        self.url_entry.delete(0, tk.END)
+        self.url_entry.insert(0, feed['url'])
+
+        # Close dialog
         self.dialog.destroy()
 
 
