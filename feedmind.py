@@ -1,14 +1,16 @@
 """
-FeedMind 🧠 - AI-Powered RSS Feed Reader with Podcast Support
+FeedMind 🧠 - AI-Powered RSS Feed Reader with Podcast & Video Support
 
 A modern, feature-rich RSS/Atom feed reader that combines intelligent
-content management with podcast support and AI-powered summaries.
+content management with podcast/video support and AI-powered summaries.
 
-Version: 3.5.0
+Version: 3.6.0
 Features:
 - RSS/Atom feed parsing and management
 - Category organization and OPML import/export
 - Podcast playback and episode downloads
+- Video podcast support (NEW in v3.6)
+- Show podcast download location (NEW in v3.6)
 - AI-powered article summaries (Claude/OpenAI)
 - Full-text article extraction
 - Dark/light themes
@@ -18,7 +20,7 @@ Features:
 - Keyboard shortcuts
 """
 
-__version__ = "3.5.0"
+__version__ = "3.6.0"
 
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, simpledialog
@@ -43,6 +45,13 @@ try:
     PODCAST_SUPPORT = True
 except ImportError:
     PODCAST_SUPPORT = False
+
+# Optional V3.6 features (video support)
+try:
+    from rss_video_player_ui import VideoPlayerWidget, is_video_file
+    VIDEO_SUPPORT = True
+except ImportError:
+    VIDEO_SUPPORT = False
 
 # Optional V3.5 features (AI summarization and extraction)
 try:
@@ -149,6 +158,10 @@ class FeedMind:
             self.podcast_downloader = PodcastDownloader("podcast_downloads")
             # Audio player widget will be created in _create_ui
 
+        # V3.6 Video support
+        self.video_player = None
+        # Video player widget will be created in _create_ui
+
         # V3.5 AI support
         self.ai_summarizer = None
         self.article_extractor = None
@@ -198,6 +211,9 @@ class FeedMind:
         file_menu.add_separator()
         file_menu.add_command(label="Export to PDF...", command=self._export_pdf, accelerator="Ctrl+P")
         file_menu.add_separator()
+        if PODCAST_SUPPORT:
+            file_menu.add_command(label="📁 Open Podcast Downloads", command=self._open_podcast_downloads)
+            file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self._on_closing)
 
         # View menu
@@ -239,6 +255,8 @@ class FeedMind:
         help_menu.add_command(label="About FeedMind", command=self._show_about)
         if PODCAST_SUPPORT:
             help_menu.add_command(label="Podcast Support ✓", state=tk.DISABLED)
+        if VIDEO_SUPPORT:
+            help_menu.add_command(label="Video Support ✓", state=tk.DISABLED)
         if AI_SUPPORT:
             help_menu.add_command(label="AI Features ✓", state=tk.DISABLED)
 
@@ -431,6 +449,13 @@ class FeedMind:
             self.audio_player.pack(fill=tk.X, padx=5, pady=5)
             # Initially hidden
             self.audio_player.pack_forget()
+
+        # Video player (V3.6 feature)
+        if VIDEO_SUPPORT:
+            self.video_player = VideoPlayerWidget(self.right_panel)
+            self.video_player.pack(fill=tk.X, padx=5, pady=5)
+            # Initially hidden
+            self.video_player.pack_forget()
 
     def _setup_keyboard_shortcuts(self):
         """Set up keyboard shortcuts."""
@@ -938,20 +963,35 @@ class FeedMind:
                 download_path = self.db.get_download_path(article_id)
 
                 if download_path and os.path.exists(download_path):
-                    # Load downloaded episode
-                    self.audio_player.pack(fill=tk.X, padx=5, pady=5)
-                    self.audio_player.load_episode(download_path, title)
-                    self.podcast_download_btn.pack_forget()  # Hide download button
-                    self._set_status(f"Podcast episode ready: {title}")
+                    # Check if it's a video file (V3.6 feature)
+                    if VIDEO_SUPPORT and self.video_player and is_video_file(download_path):
+                        # Show video player for video files
+                        self.video_player.pack(fill=tk.X, padx=5, pady=5)
+                        self.video_player.load_video(download_path, title)
+                        self.audio_player.pack_forget()
+                        self.podcast_download_btn.pack_forget()
+                        self._set_status(f"Video episode ready: {title}")
+                    else:
+                        # Load audio episode
+                        self.audio_player.pack(fill=tk.X, padx=5, pady=5)
+                        self.audio_player.load_episode(download_path, title)
+                        if VIDEO_SUPPORT and self.video_player:
+                            self.video_player.pack_forget()
+                        self.podcast_download_btn.pack_forget()
+                        self._set_status(f"Podcast episode ready: {title}")
                 else:
                     # Show player but indicate download needed
                     self.audio_player.pack(fill=tk.X, padx=5, pady=5)
+                    if VIDEO_SUPPORT and self.video_player:
+                        self.video_player.pack_forget()
                     self.podcast_download_btn.pack(side=tk.LEFT, padx=2)  # Show download button
                     self._set_status(f"Podcast episode (download to play): {title}")
             elif PODCAST_SUPPORT and self.audio_player:
                 # Hide player and download button for non-podcast articles
                 self.audio_player.pack_forget()
                 self.podcast_download_btn.pack_forget()
+                if VIDEO_SUPPORT and self.video_player:
+                    self.video_player.pack_forget()
 
     def _open_article(self):
         """Open selected article in browser."""
@@ -1317,6 +1357,41 @@ class FeedMind:
             messagebox.showerror("Error", f"Failed to export PDF:\n{str(e)}")
             self._set_status("PDF export failed")
 
+    def _open_podcast_downloads(self):
+        """Open the podcast downloads folder in file explorer."""
+        import platform
+        import subprocess
+
+        # Get the absolute path to podcast downloads
+        download_dir = os.path.abspath("podcast_downloads")
+
+        # Create directory if it doesn't exist
+        if not os.path.exists(download_dir):
+            os.makedirs(download_dir)
+            self.logger.info(f"Created podcast downloads directory: {download_dir}")
+
+        try:
+            system = platform.system()
+
+            if system == 'Windows':
+                os.startfile(download_dir)
+            elif system == 'Darwin':  # macOS
+                subprocess.run(['open', download_dir], check=True)
+            else:  # Linux and others
+                subprocess.run(['xdg-open', download_dir], check=True)
+
+            self._set_status(f"Opened: {download_dir}")
+            self.logger.info(f"Opened podcast downloads folder: {download_dir}")
+
+        except Exception as e:
+            self.logger.error(f"Failed to open podcast downloads: {e}")
+            # Fallback: show the path in a dialog
+            messagebox.showinfo(
+                "Podcast Downloads Location",
+                f"Podcast episodes are saved to:\n\n{download_dir}\n\n"
+                f"Copy this path to open it manually in your file explorer."
+            )
+
     def _manage_categories(self):
         """Open category management dialog."""
         CategoryManager(self.root, self.db, self._on_categories_changed)
@@ -1634,12 +1709,14 @@ To use AI features:
         features = ["Categories & OPML", "Dark Mode", "Reading Stats", "PDF Export"]
         if PODCAST_SUPPORT:
             features.append("🎙️ Podcast Support")
+        if VIDEO_SUPPORT:
+            features.append("🎬 Video Support")
         if AI_SUPPORT:
             features.append("🤖 AI Summaries")
 
         msg = f"""FeedMind 🧠 v{__version__}
 
-AI-Powered RSS Reader with Podcast Support
+AI-Powered RSS Reader with Podcast & Video Support
 
 Features:
 {chr(10).join('• ' + f for f in features)}
