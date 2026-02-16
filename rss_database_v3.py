@@ -96,15 +96,17 @@ class RSSDatabase(RSSDatabase_V2):
             cursor.execute("ALTER TABLE feeds ADD COLUMN is_bookmarked INTEGER DEFAULT 0")
 
         # V3.7.1: Fix podcast episodes with duplicate links
-        # For podcast episodes, use audio_url as link to ensure uniqueness
+        # Delete podcast episodes where the link doesn't match the audio_url
+        # These will be re-fetched on next refresh with correct unique links
         cursor.execute("""
-            UPDATE articles
-            SET link = audio_url
+            DELETE FROM articles
             WHERE audio_url IS NOT NULL
               AND audio_url != ''
               AND link != audio_url
         """)
-        logger.info("Migrated podcast episodes to use audio_url as link")
+        deleted_count = cursor.rowcount
+        if deleted_count > 0:
+            logger.info(f"Removed {deleted_count} duplicate podcast episodes. Use 'Refresh All' to restore them with unique links.")
 
     # Podcast Episode Methods
 
