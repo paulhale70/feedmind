@@ -248,23 +248,39 @@ class RSSDatabase:
         self.conn.commit()
         logger.info(f"Cached {cached_count} articles from {feed_url}")
 
-    def get_cached_articles(self, feed_url: Optional[str] = None, limit: int = 100) -> list[dict]:
+    def get_cached_articles(self, feed_url: Optional[str] = None, limit: int = 1000, unread_only: bool = False) -> list[dict]:
         """Get cached articles, optionally filtered by feed URL."""
         cursor = self.conn.cursor()
 
         if feed_url:
-            cursor.execute("""
-                SELECT * FROM articles
-                WHERE feed_url = ?
-                ORDER BY published DESC, cached_date DESC
-                LIMIT ?
-            """, (feed_url, limit))
+            if unread_only:
+                cursor.execute("""
+                    SELECT * FROM articles
+                    WHERE feed_url = ? AND is_read = 0
+                    ORDER BY published DESC, cached_date DESC
+                    LIMIT ?
+                """, (feed_url, limit))
+            else:
+                cursor.execute("""
+                    SELECT * FROM articles
+                    WHERE feed_url = ?
+                    ORDER BY published DESC, cached_date DESC
+                    LIMIT ?
+                """, (feed_url, limit))
         else:
-            cursor.execute("""
-                SELECT * FROM articles
-                ORDER BY published DESC, cached_date DESC
-                LIMIT ?
-            """, (limit,))
+            if unread_only:
+                cursor.execute("""
+                    SELECT * FROM articles
+                    WHERE is_read = 0
+                    ORDER BY published DESC, cached_date DESC
+                    LIMIT ?
+                """, (limit,))
+            else:
+                cursor.execute("""
+                    SELECT * FROM articles
+                    ORDER BY published DESC, cached_date DESC
+                    LIMIT ?
+                """, (limit,))
 
         return [dict(row) for row in cursor.fetchall()]
 
