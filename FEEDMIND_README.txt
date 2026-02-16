@@ -1,4 +1,4 @@
-FeedMind v3.5 - RSS Feed Reader & Podcast Manager
+FeedMind v3.7 - RSS Feed Reader & Podcast Manager
 ====================================================
 
 QUICK START
@@ -24,8 +24,16 @@ PODCASTS:
 - Subscribe to podcast feeds
 - Stream or download episodes
 - Built-in audio player with controls
+- Video podcast support (MP4, MKV, AVI, etc.)
 - Episode queue management
 - Playback speed control
+- Quick access to downloads folder
+
+ORGANIZATION (NEW in v3.7):
+- Sort articles by date, title, or feed name
+- Filter to show only last 7 days of articles
+- Bookmark favorite feeds with pin icons
+- Bookmarked feeds appear at top of list
 
 AI-POWERED FEATURES:
 - Automatic article summarization (requires API key)
@@ -98,12 +106,16 @@ Ctrl+R     - Refresh selected feed
 Ctrl+A     - Refresh all feeds
 Ctrl+F     - Focus search box
 Ctrl+N     - Mark as read/unread
-Ctrl+S     - Favorite/unfavorite
-Ctrl+O     - Open article in browser
-Ctrl+Q     - Quit application
-Space      - Next article
-Backspace  - Previous article
-Enter      - Open selected article
+Ctrl+S     - Show statistics
+R          - Toggle read/unread
+F          - Toggle favorite
+B          - Bookmark/unbookmark feed (NEW in v3.7)
+1          - Show all articles
+2          - Show unread articles
+3          - Show favorite articles
+Space      - Scroll article down
+Shift+Space- Scroll article up
+Escape     - Clear search
 
 CONFIGURATION
 -------------
@@ -198,12 +210,23 @@ See LICENSE file for full license text
 
 VERSION INFORMATION
 -------------------
-Version: 3.5.0
-Build Date: 2026-01-31
+Version: 3.7.0
+Build Date: 2026-02-16
 Python Version: 3.8+
 
 CHANGELOG
 ---------
+v3.7.0 (2026-02-16):
+- Article sorting (date, title, feed name)
+- 7-day article filter
+- Feed bookmarks with pin icons
+- Improved feed organization
+
+v3.6.0 (2026-02-03):
+- Video podcast support
+- Podcast downloads location access
+- Enhanced multimedia features
+
 v3.5.0 (2026-01-31):
 - RSS feed auto-discovery feature
 - Local logging system

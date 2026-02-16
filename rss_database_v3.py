@@ -91,6 +91,10 @@ class RSSDatabase(RSSDatabase_V2):
         if 'auto_refresh_enabled' not in feed_columns:
             cursor.execute("ALTER TABLE feeds ADD COLUMN auto_refresh_enabled INTEGER DEFAULT 1")
 
+        # V3.7: Add bookmark column
+        if 'is_bookmarked' not in feed_columns:
+            cursor.execute("ALTER TABLE feeds ADD COLUMN is_bookmarked INTEGER DEFAULT 0")
+
     # Podcast Episode Methods
 
     def get_podcast_episodes(self, feed_url: Optional[str] = None,
@@ -155,6 +159,35 @@ class RSSDatabase(RSSDatabase_V2):
         """, (feed_url,))
         row = cursor.fetchone()
         return bool(row and row[0]) if row else False
+
+    # V3.7: Feed Bookmark Methods
+
+    def bookmark_feed(self, feed_url: str, is_bookmarked: bool = True):
+        """Bookmark or unbookmark a feed."""
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            UPDATE feeds SET is_bookmarked = ? WHERE url = ?
+        """, (1 if is_bookmarked else 0, feed_url))
+        self.conn.commit()
+        logger.info(f"Feed {'bookmarked' if is_bookmarked else 'unbookmarked'}: {feed_url}")
+
+    def is_feed_bookmarked(self, feed_url: str) -> bool:
+        """Check if a feed is bookmarked."""
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT is_bookmarked FROM feeds WHERE url = ?
+        """, (feed_url,))
+        row = cursor.fetchone()
+        return bool(row and row[0]) if row else False
+
+    def get_bookmarked_feeds(self) -> List[Dict]:
+        """Get all bookmarked feeds."""
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT * FROM feeds WHERE is_bookmarked = 1
+            ORDER BY title
+        """)
+        return [dict(row) for row in cursor.fetchall()]
 
     def add_podcast_download(self, article_id: int, audio_url: str,
                             local_path: str, file_size: int,

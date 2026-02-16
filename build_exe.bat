@@ -3,7 +3,7 @@ REM FeedMind Windows Executable Build Script
 REM This script automates the process of building FeedMind.exe
 
 echo ========================================
-echo FeedMind v3.5 - Windows Build Script
+echo FeedMind v3.7 - Windows Build Script
 echo ========================================
 echo.
 

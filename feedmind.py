@@ -4,13 +4,16 @@ FeedMind 🧠 - AI-Powered RSS Feed Reader with Podcast & Video Support
 A modern, feature-rich RSS/Atom feed reader that combines intelligent
 content management with podcast/video support and AI-powered summaries.
 
-Version: 3.6.0
+Version: 3.7.0
 Features:
 - RSS/Atom feed parsing and management
 - Category organization and OPML import/export
 - Podcast playback and episode downloads
-- Video podcast support (NEW in v3.6)
-- Show podcast download location (NEW in v3.6)
+- Video podcast support (v3.6)
+- Show podcast download location (v3.6)
+- Article sorting (date, title, feed) (NEW in v3.7)
+- 7-day article filter (NEW in v3.7)
+- Feed bookmarks (NEW in v3.7)
 - AI-powered article summaries (Claude/OpenAI)
 - Full-text article extraction
 - Dark/light themes
@@ -20,7 +23,7 @@ Features:
 - Keyboard shortcuts
 """
 
-__version__ = "3.6.0"
+__version__ = "3.7.0"
 
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, simpledialog
@@ -147,6 +150,10 @@ class FeedMind:
         self.auto_refresh_enabled = False
         self.auto_refresh_job = None
 
+        # V3.7 Sorting and filtering
+        self.sort_order = "date_new"  # date_new, date_old, title_az, title_za, feed
+        self.show_7days_only = False  # Filter to show only last 7 days
+
         # Data mappings for listboxes (to store metadata)
         self.feed_urls = []  # Maps feed listbox index to URL
         self.category_ids = []  # Maps category listbox index to ID
@@ -232,6 +239,8 @@ class FeedMind:
         menubar.add_cascade(label="Manage", menu=manage_menu)
         manage_menu.add_command(label="Categories...", command=self._manage_categories, accelerator="Ctrl+M")
         manage_menu.add_command(label="Feed Settings...", command=self._feed_settings)
+        manage_menu.add_separator()
+        manage_menu.add_command(label="📌 Bookmark Feed", command=self._toggle_feed_bookmark, accelerator="B")
         manage_menu.add_separator()
         manage_menu.add_command(label="Preferences...", command=self._show_preferences)
         manage_menu.add_separator()
@@ -357,6 +366,11 @@ class FeedMind:
         self.refresh_all_btn = tk.Button(refresh_frame, text="Refresh All", command=self._refresh_all)
         self.refresh_all_btn.pack(fill=tk.X, pady=1)
 
+        # V3.7: Bookmark feed button
+        self.bookmark_btn = tk.Button(refresh_frame, text="📌 Bookmark Feed (B)",
+                                      command=self._toggle_feed_bookmark)
+        self.bookmark_btn.pack(fill=tk.X, pady=1)
+
         self.mark_all_btn = tk.Button(refresh_frame, text="Mark All Read", command=self._mark_all_read)
         self.mark_all_btn.pack(fill=tk.X, pady=1)
 
@@ -381,6 +395,26 @@ class FeedMind:
 
         self.clear_search_btn = tk.Button(search_frame, text="Clear", command=self._clear_search)
         self.clear_search_btn.pack(side=tk.LEFT)
+
+        # V3.7: Sort and filter controls
+        sort_filter_frame = tk.Frame(self.right_panel)
+        sort_filter_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
+
+        tk.Label(sort_filter_frame, text="Sort:").pack(side=tk.LEFT, padx=(0, 5))
+
+        self.sort_combo = ttk.Combobox(sort_filter_frame, width=20, state="readonly")
+        self.sort_combo['values'] = ('Date (Newest First)', 'Date (Oldest First)',
+                                      'Title (A-Z)', 'Title (Z-A)', 'By Feed Name')
+        self.sort_combo.current(0)  # Default to "Date (Newest First)"
+        self.sort_combo.pack(side=tk.LEFT, padx=(0, 10))
+        self.sort_combo.bind('<<ComboboxSelected>>', lambda e: self._change_sort())
+
+        # 7-day filter checkbox
+        self.show_7days_var = tk.BooleanVar(value=False)
+        self.show_7days_check = tk.Checkbutton(sort_filter_frame, text="Last 7 Days Only",
+                                               variable=self.show_7days_var,
+                                               command=self._toggle_7day_filter)
+        self.show_7days_check.pack(side=tk.LEFT)
 
         # Article list
         list_frame = tk.Frame(self.right_panel)
@@ -468,6 +502,7 @@ class FeedMind:
         # Actions
         self.root.bind('r', lambda e: self._toggle_read())
         self.root.bind('f', lambda e: self._toggle_favorite())
+        self.root.bind('b', lambda e: self._toggle_feed_bookmark())  # V3.7: Bookmark feed
         self.root.bind('n', lambda e: self.url_entry.focus())
         self.root.bind('<Control-r>', lambda e: self._refresh_feed())
         self.root.bind('<Control-Shift-R>', lambda e: self._refresh_all())
@@ -588,9 +623,14 @@ class FeedMind:
         if self.current_category_id is not None:
             feeds = [f for f in feeds if f['category_id'] == self.current_category_id]
 
+        # V3.7: Sort bookmarked feeds first
+        feeds.sort(key=lambda f: (not f.get('is_bookmarked', 0), f['title']))
+
         for feed in feeds:
             unread = self.db.get_unread_count(feed['url'])
-            display = f"{feed['title']}"
+            # V3.7: Add bookmark indicator
+            bookmark_marker = "📌 " if feed.get('is_bookmarked', 0) else ""
+            display = f"{bookmark_marker}{feed['title']}"
             if unread > 0:
                 display += f" ({unread})"
             self.feed_listbox.insert(tk.END, display)
@@ -632,6 +672,25 @@ class FeedMind:
                 articles = self.db.get_cached_articles(self.current_feed_url)
             else:
                 articles = self.db.get_cached_articles()
+
+        # V3.7: Apply 7-day filter if enabled
+        if self.show_7days_only:
+            from datetime import datetime, timedelta
+            cutoff_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
+            articles = [a for a in articles
+                       if a.get('published', '') and a['published'][:10] >= cutoff_date]
+
+        # V3.7: Apply sorting
+        if self.sort_order == "date_new":
+            articles.sort(key=lambda a: a.get('published', ''), reverse=True)
+        elif self.sort_order == "date_old":
+            articles.sort(key=lambda a: a.get('published', ''))
+        elif self.sort_order == "title_az":
+            articles.sort(key=lambda a: a.get('title', '').lower())
+        elif self.sort_order == "title_za":
+            articles.sort(key=lambda a: a.get('title', '').lower(), reverse=True)
+        elif self.sort_order == "feed":
+            articles.sort(key=lambda a: a.get('feed_url', ''))
 
         # Display articles
         for article in articles:
@@ -1039,6 +1098,28 @@ class FeedMind:
             self._update_view()
             self._on_article_select(None)  # Refresh detail view
 
+    def _toggle_feed_bookmark(self):
+        """Toggle bookmark status for the currently selected feed (V3.7)."""
+        if not self.current_feed_url:
+            messagebox.showinfo("No Feed Selected",
+                              "Please select a feed from the list to bookmark it.\n\n"
+                              "Bookmarked feeds will appear with a 📌 pin icon.")
+            return
+
+        # Get current bookmark status
+        is_bookmarked = self.db.is_feed_bookmarked(self.current_feed_url)
+
+        # Toggle bookmark
+        self.db.bookmark_feed(self.current_feed_url, not is_bookmarked)
+
+        # Refresh feed list to show/hide bookmark indicator
+        self._load_feeds()
+
+        # Show status
+        action = "unbookmarked" if is_bookmarked else "bookmarked"
+        self._set_status(f"Feed {action}")
+        self.logger.info(f"Feed {action}: {self.current_feed_url}")
+
     def _download_podcast(self):
         """Download podcast episode for offline playback."""
         if not PODCAST_SUPPORT or not self.selected_article_id:
@@ -1127,6 +1208,30 @@ class FeedMind:
         """Change view mode (all/unread/favorites)."""
         self.current_view = view
         self._update_view()
+
+    def _change_sort(self):
+        """Change article sort order (V3.7)."""
+        selected = self.sort_combo.get()
+
+        if selected == 'Date (Newest First)':
+            self.sort_order = "date_new"
+        elif selected == 'Date (Oldest First)':
+            self.sort_order = "date_old"
+        elif selected == 'Title (A-Z)':
+            self.sort_order = "title_az"
+        elif selected == 'Title (Z-A)':
+            self.sort_order = "title_za"
+        elif selected == 'By Feed Name':
+            self.sort_order = "feed"
+
+        self._update_view()
+        self.logger.info(f"Sort order changed to: {self.sort_order}")
+
+    def _toggle_7day_filter(self):
+        """Toggle 7-day article filter (V3.7)."""
+        self.show_7days_only = self.show_7days_var.get()
+        self._update_view()
+        self.logger.info(f"7-day filter: {'enabled' if self.show_7days_only else 'disabled'}")
 
     def _search(self):
         """Search articles."""

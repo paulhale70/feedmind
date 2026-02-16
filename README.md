@@ -6,18 +6,21 @@ This is a learn to code project featuring multiple applications.
 
 # FeedMind 🧠
 
-**AI-Powered RSS Reader with Podcast Support**
+**AI-Powered RSS Reader with Podcast & Video Support**
 
-FeedMind is an intelligent RSS/Atom feed reader that goes beyond simple aggregation. It uses AI to help you understand content faster, supports podcast playback, and keeps you organized with smart features.
+FeedMind is an intelligent RSS/Atom feed reader that goes beyond simple aggregation. It uses AI to help you understand content faster, supports audio and video podcast playback, and keeps you organized with smart features.
 
 ## ✨ What Makes FeedMind Special?
 
 Most RSS readers just show you articles. **FeedMind helps you understand them.**
 
 - 🤖 **AI Summaries** - Get TL;DR and key points for any article
-- 🎙️ **Podcast Player** - Play episodes directly in the app
+- 🎙️ **Podcast Player** - Play audio episodes directly in the app
+- 🎬 **Video Support** - Watch video podcasts with system player
 - 📄 **Full-Text Extraction** - Fetch complete articles, not just snippets
-- 🔄 **Smart Auto-Refresh** - Adapts to how often feeds update
+- 🔄 **Smart Sorting** - Sort by date, title, or feed name
+- 📌 **Feed Bookmarks** - Pin your favorite feeds for quick access
+- ⏱️ **7-Day Filter** - Focus on recent content
 - 📁 **Categories & OPML** - Import from any RSS reader
 - 🌙 **Dark Mode** - Easy on the eyes
 
@@ -31,7 +34,7 @@ Most RSS readers just show you articles. **FeedMind helps you understand them.**
 # Install base features
 pip install -r requirements.txt
 
-# Run FeedMind v3.5 (full-featured, no API needed)
+# Run FeedMind v3.7 (full-featured, no API needed)
 python feedmind.py
 ```
 
@@ -60,7 +63,7 @@ BBC News: http://feeds.bbci.co.uk/news/rss.xml
 
 ---
 
-## 📦 FeedMind v3.5 - Complete Feature Set
+## 📦 FeedMind v3.7 - Complete Feature Set
 
 **Main Application:** `feedmind.py` (All features in one file!)
 
@@ -95,7 +98,14 @@ BBC News: http://feeds.bbci.co.uk/news/rss.xml
 - ✓ **Full-text article extraction** (complete articles)
 - ✓ **Smart caching** (never re-process articles)
 
-**Run FeedMind v3.5:**
+### Video & Organization Features (V3.6-V3.7)
+- ✓ **Video podcast support** (v3.6) - MP4, MKV, AVI, MOV, WebM
+- ✓ **Podcast downloads location** (v3.6) - Easy file access
+- ✓ **Article sorting** (v3.7) - Sort by date, title, or feed name
+- ✓ **7-day article filter** (v3.7) - Focus on recent content
+- ✓ **Feed bookmarks** (v3.7) - Pin important feeds with 📌 icon
+
+**Run FeedMind v3.7:**
 ```bash
 python feedmind.py
 ```
