@@ -615,6 +615,12 @@ class FeedMind:
 
     def _load_feeds(self):
         """Load feeds from database."""
+        # V3.7: Save current selection to restore after reload
+        selected_url = None
+        selection = self.feed_listbox.curselection()
+        if selection and selection[0] < len(self.feed_urls):
+            selected_url = self.feed_urls[selection[0]]
+
         self.feed_listbox.delete(0, tk.END)
         self.feed_urls.clear()
         feeds = self.db.get_feeds()
@@ -635,6 +641,12 @@ class FeedMind:
                 display += f" ({unread})"
             self.feed_listbox.insert(tk.END, display)
             self.feed_urls.append(feed['url'])
+
+        # V3.7: Restore selection after reload
+        if selected_url and selected_url in self.feed_urls:
+            new_index = self.feed_urls.index(selected_url)
+            self.feed_listbox.selection_set(new_index)
+            self.feed_listbox.see(new_index)  # Scroll to make it visible
 
     def _load_categories(self):
         """Load categories from database."""
@@ -673,12 +685,20 @@ class FeedMind:
             else:
                 articles = self.db.get_cached_articles()
 
+        # V3.7: Track article counts for user feedback
+        total_before_filter = len(articles)
+
         # V3.7: Apply 7-day filter if enabled
         if self.show_7days_only:
             from datetime import datetime, timedelta
             cutoff_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
             articles = [a for a in articles
                        if a.get('published', '') and a['published'][:10] >= cutoff_date]
+
+            # Log filter results
+            filtered_count = total_before_filter - len(articles)
+            if filtered_count > 0:
+                self.logger.debug(f"7-day filter removed {filtered_count} older articles")
 
         # V3.7: Apply sorting
         if self.sort_order == "date_new":
@@ -906,6 +926,7 @@ class FeedMind:
 
             # Count new articles
             new_count = len(self.db.get_cached_articles(url)) - old_count
+            total_count = len(self.db.get_cached_articles(url))
 
             # Show notification if there are new articles
             if new_count > 0:
@@ -915,9 +936,16 @@ class FeedMind:
 
             self._load_feeds()
             self._update_view()
-            self._set_status("Refresh complete")
+
+            # V3.7: Provide detailed status message
+            status_msg = f"Refresh complete: {new_count} new, {total_count} total articles"
+            if self.show_7days_only:
+                status_msg += " (7-day filter active)"
+            self._set_status(status_msg)
+            self.logger.info(f"Feed refreshed: {url} - {new_count} new articles, {total_count} total")
         except Exception as e:
             self._set_status(f"Error: {str(e)}")
+            self.logger.error(f"Refresh error: {str(e)}")
 
     def _cache_articles_only(self, url: str, articles: list):
         """Cache articles without refreshing view (for batch operations)."""
@@ -931,7 +959,14 @@ class FeedMind:
         """Complete refresh all operation."""
         self._load_feeds()
         self._update_view()
-        self._set_status("All feeds refreshed")
+
+        # V3.7: Count total articles
+        total_articles = len(self.db.get_cached_articles())
+        status_msg = f"All feeds refreshed - {total_articles} total articles"
+        if self.show_7days_only:
+            status_msg += " (7-day filter active)"
+        self._set_status(status_msg)
+        self.logger.info(f"Refresh all completed - {total_articles} articles in database")
 
     def _mark_all_read(self):
         """Mark all articles as read."""
@@ -1231,6 +1266,12 @@ class FeedMind:
         """Toggle 7-day article filter (V3.7)."""
         self.show_7days_only = self.show_7days_var.get()
         self._update_view()
+
+        # V3.7: Provide feedback to user
+        if self.show_7days_only:
+            self._set_status("7-day filter enabled - showing only recent articles")
+        else:
+            self._set_status("7-day filter disabled - showing all articles")
         self.logger.info(f"7-day filter: {'enabled' if self.show_7days_only else 'disabled'}")
 
     def _search(self):
