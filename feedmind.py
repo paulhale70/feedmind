@@ -33,6 +33,7 @@ import os
 import logging
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict
+from email.utils import parsedate_to_datetime
 from rss_core import RSSFetcher
 from rss_database_v3 import RSSDatabase  # V3 database with podcast and AI support
 from rss_opml import OPMLHandler
@@ -188,6 +189,9 @@ class FeedMind:
         self._load_categories()
         self._update_view()
 
+        # Automatic cleanup: Remove articles older than 3 weeks (21 days)
+        self._auto_cleanup_old_articles()
+
         # Set up keyboard shortcuts
         self._setup_keyboard_shortcuts()
 
@@ -204,6 +208,45 @@ class FeedMind:
             self.current_theme = DarkTheme()
         else:
             self.current_theme = LightTheme()
+
+    def _parse_published_date(self, date_str: str) -> Optional[datetime]:
+        """
+        Parse published date from various formats (RFC 822, ISO 8601, etc.).
+
+        Returns datetime object or None if parsing fails.
+        """
+        if not date_str:
+            return None
+
+        # Try RFC 822 format (common in RSS feeds): "Thu, 15 Feb 2024 10:30:00 GMT"
+        try:
+            return parsedate_to_datetime(date_str)
+        except (TypeError, ValueError):
+            pass
+
+        # Try ISO 8601 format (common in Atom feeds): "2024-02-15T10:30:00Z"
+        try:
+            # Handle both with and without timezone
+            if 'T' in date_str:
+                # Remove timezone info for simple parsing
+                clean_date = date_str.replace('Z', '').split('+')[0].split('-', 3)
+                if len(clean_date) >= 3:
+                    date_part = '-'.join(clean_date[:3])
+                    if 'T' in date_part:
+                        return datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+            return datetime.fromisoformat(date_str.replace('Z', ''))
+        except (ValueError, AttributeError):
+            pass
+
+        # Try simple date format: "2024-02-15"
+        try:
+            return datetime.strptime(date_str[:10], "%Y-%m-%d")
+        except (ValueError, AttributeError):
+            pass
+
+        # If all parsing fails, return None
+        self.logger.debug(f"Failed to parse date: {date_str}")
+        return None
 
     def _create_menu(self):
         """Create application menu bar."""
@@ -690,10 +733,13 @@ class FeedMind:
 
         # V3.7: Apply 7-day filter if enabled
         if self.show_7days_only:
-            from datetime import datetime, timedelta
-            cutoff_date = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
-            articles = [a for a in articles
-                       if a.get('published', '') and a['published'][:10] >= cutoff_date]
+            cutoff_date = datetime.now() - timedelta(days=7)
+            filtered_articles = []
+            for a in articles:
+                pub_date = self._parse_published_date(a.get('published', ''))
+                if pub_date and pub_date >= cutoff_date:
+                    filtered_articles.append(a)
+            articles = filtered_articles
 
             # Log filter results
             filtered_count = total_before_filter - len(articles)
@@ -702,9 +748,11 @@ class FeedMind:
 
         # V3.7: Apply sorting
         if self.sort_order == "date_new":
-            articles.sort(key=lambda a: a.get('published', ''), reverse=True)
+            # Sort by parsed date, newest first (None dates go to end)
+            articles.sort(key=lambda a: self._parse_published_date(a.get('published', '')) or datetime.min, reverse=True)
         elif self.sort_order == "date_old":
-            articles.sort(key=lambda a: a.get('published', ''))
+            # Sort by parsed date, oldest first (None dates go to end)
+            articles.sort(key=lambda a: self._parse_published_date(a.get('published', '')) or datetime.max)
         elif self.sort_order == "title_az":
             articles.sort(key=lambda a: a.get('title', '').lower())
         elif self.sort_order == "title_za":
@@ -1316,11 +1364,20 @@ class FeedMind:
         self._update_view()
 
     def _clear_cache(self):
-        """Clear old cached articles."""
-        if messagebox.askyesno("Confirm", "Clear articles older than 30 days?"):
-            count = self.db.clear_old_articles(days=30)
+        """Clear old cached articles (manual cleanup)."""
+        if messagebox.askyesno("Confirm", "Clear articles older than 3 weeks (21 days)?"):
+            count = self.db.clear_old_articles(days=21)
             self._update_view()
             self._set_status(f"Cleared {count} old articles")
+
+    def _auto_cleanup_old_articles(self):
+        """Automatically clean up articles older than 3 weeks on startup."""
+        try:
+            count = self.db.clear_old_articles(days=21)
+            if count > 0:
+                self.logger.info(f"Auto-cleanup: Removed {count} articles older than 3 weeks")
+        except Exception as e:
+            self.logger.error(f"Auto-cleanup failed: {e}")
 
     def _next_article(self):
         """Select next article in list."""
