@@ -95,6 +95,17 @@ class RSSDatabase(RSSDatabase_V2):
         if 'is_bookmarked' not in feed_columns:
             cursor.execute("ALTER TABLE feeds ADD COLUMN is_bookmarked INTEGER DEFAULT 0")
 
+        # V3.7.1: Fix podcast episodes with duplicate links
+        # For podcast episodes, use audio_url as link to ensure uniqueness
+        cursor.execute("""
+            UPDATE articles
+            SET link = audio_url
+            WHERE audio_url IS NOT NULL
+              AND audio_url != ''
+              AND link != audio_url
+        """)
+        logger.info("Migrated podcast episodes to use audio_url as link")
+
     # Podcast Episode Methods
 
     def get_podcast_episodes(self, feed_url: Optional[str] = None,
@@ -298,6 +309,24 @@ class RSSDatabase(RSSDatabase_V2):
                 if audio_url:
                     has_audio = True
 
+                # For podcasts with duplicate links, check by audio_url instead
+                if audio_url:
+                    # Check if this audio episode already exists
+                    cursor.execute("""
+                        SELECT id FROM articles
+                        WHERE feed_url = ? AND audio_url = ?
+                    """, (feed_url, audio_url))
+
+                    if cursor.fetchone():
+                        # Episode already exists, skip
+                        continue
+
+                    # Use audio_url as the link to avoid duplicate link conflicts
+                    # This allows each episode to have a unique identifier
+                    link_to_use = audio_url
+                else:
+                    link_to_use = article.link
+
                 cursor.execute("""
                     INSERT OR IGNORE INTO articles
                     (feed_url, title, link, description, published, cached_date,
@@ -306,7 +335,7 @@ class RSSDatabase(RSSDatabase_V2):
                 """, (
                     feed_url,
                     article.title,
-                    article.link,
+                    link_to_use,
                     article.description,
                     article.published,
                     datetime.now().isoformat(),
