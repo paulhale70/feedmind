@@ -213,14 +213,23 @@ class FeedMind:
         """
         Parse published date from various formats (RFC 822, ISO 8601, etc.).
 
-        Returns datetime object or None if parsing fails.
+        Returns naive (UTC) datetime object or None if parsing fails.
+        All timezone-aware datetimes are converted to UTC then stripped of tzinfo
+        to ensure consistent comparisons.
         """
         if not date_str:
             return None
 
+        def _strip_tz(dt: datetime) -> datetime:
+            """Convert aware datetime to naive UTC."""
+            if dt.tzinfo is not None:
+                from datetime import timezone
+                dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+            return dt
+
         # Try RFC 822 format (common in RSS feeds): "Thu, 15 Feb 2024 10:30:00 GMT"
         try:
-            return parsedate_to_datetime(date_str)
+            return _strip_tz(parsedate_to_datetime(date_str))
         except (TypeError, ValueError):
             pass
 
@@ -233,8 +242,8 @@ class FeedMind:
                 if len(clean_date) >= 3:
                     date_part = '-'.join(clean_date[:3])
                     if 'T' in date_part:
-                        return datetime.fromisoformat(date_str.replace('Z', '+00:00'))
-            return datetime.fromisoformat(date_str.replace('Z', ''))
+                        return _strip_tz(datetime.fromisoformat(date_str.replace('Z', '+00:00')))
+            return _strip_tz(datetime.fromisoformat(date_str.replace('Z', '')))
         except (ValueError, AttributeError):
             pass
 
