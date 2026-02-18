@@ -47,7 +47,7 @@ try:
     from rss_audio_player_ui import AudioPlayerWidget
     from rss_podcast_downloader import PodcastDownloader
     PODCAST_SUPPORT = True
-except ImportError:
+except Exception:
     PODCAST_SUPPORT = False
 
 # Optional V3.6 features (video support)
@@ -631,7 +631,8 @@ class FeedMind:
             else:
                 widget.configure(bg=theme.button_bg, fg=theme.button_fg,
                                activebackground=theme.button_active,
-                               activeforeground=theme.button_fg)
+                               activeforeground=theme.button_fg,
+                               disabledforeground=theme.fg_secondary)
         elif widget_type == 'Entry':
             widget.configure(bg=theme.bg_primary, fg=theme.fg_primary,
                            insertbackground=theme.fg_primary,

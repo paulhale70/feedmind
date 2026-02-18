@@ -4,7 +4,7 @@ Provides playback controls for podcast episodes.
 """
 
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 from typing import Optional, Callable
 from rss_audio_player import AudioPlayer, PlaybackState
 
@@ -146,7 +146,15 @@ class AudioPlayerWidget(tk.Frame):
 
     def _toggle_play_pause(self):
         """Toggle between play and pause."""
-        if not self.player.is_available() or not self.player.current_file:
+        if not self.player.is_available():
+            messagebox.showwarning(
+                "Audio Unavailable",
+                "Audio playback requires pygame.\n\nInstall it with:\n  pip install pygame",
+                parent=self
+            )
+            return
+
+        if not self.player.current_file:
             return
 
         state = self.player.get_state()
@@ -206,7 +214,13 @@ class AudioPlayerWidget(tk.Frame):
 
     def _update_controls(self):
         """Update control button states."""
-        if not self.player.is_available() or not self.player.current_file:
+        if not self.player.is_available():
+            self.episode_label.config(text="Audio unavailable — run: pip install pygame")
+            self.play_pause_btn.config(text="▶ Play", state=tk.NORMAL)
+            self.stop_btn.config(state=tk.DISABLED)
+            return
+
+        if not self.player.current_file:
             self.play_pause_btn.config(text="▶ Play", state=tk.DISABLED)
             self.stop_btn.config(state=tk.DISABLED)
             return

@@ -14,7 +14,7 @@ try:
     import pygame
     pygame.mixer.init()
     PYGAME_AVAILABLE = True
-except ImportError:
+except Exception:
     PYGAME_AVAILABLE = False
 
 logging.basicConfig(level=logging.INFO)
