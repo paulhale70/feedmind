@@ -1,21 +1,34 @@
 """
 Audio Player for RSS Reader V3
 Handles podcast episode playback with controls.
+Supports pygame and Windows MCI (Media Control Interface) backends.
 """
 
 import logging
 import os
+import sys
 import threading
 import time
 from typing import Optional, Callable
 from enum import Enum
 
+# Determine available audio backend
+_BACKEND = None
+
 try:
     import pygame
     pygame.mixer.init()
-    PYGAME_AVAILABLE = True
+    _BACKEND = 'pygame'
 except Exception:
-    PYGAME_AVAILABLE = False
+    pass
+
+if _BACKEND is None and sys.platform == 'win32':
+    try:
+        import ctypes
+        ctypes.windll.winmm
+        _BACKEND = 'mci'
+    except Exception:
+        pass
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -26,6 +39,87 @@ class PlaybackState(Enum):
     STOPPED = "stopped"
     PLAYING = "playing"
     PAUSED = "paused"
+
+
+class _MCIPlayer:
+    """Windows MCI backend for audio playback."""
+
+    _alias = "feedmind_audio"
+
+    def __init__(self):
+        self._winmm = ctypes.windll.winmm
+        self._loaded = False
+
+    def _send(self, command: str) -> tuple:
+        """Send MCI command string. Returns (error_code, response_string)."""
+        buf = ctypes.create_unicode_buffer(255)
+        err = self._winmm.mciSendStringW(command, buf, 254, 0)
+        return err, buf.value
+
+    def load(self, file_path: str) -> bool:
+        """Open an audio file via MCI."""
+        self.close()
+        # mpegvideo type supports mp3, wav, wma, and more
+        err, _ = self._send(f'open "{file_path}" type mpegvideo alias {self._alias}')
+        if err:
+            # Retry without explicit type for other formats
+            err, _ = self._send(f'open "{file_path}" alias {self._alias}')
+        self._loaded = err == 0
+        if self._loaded:
+            self._send(f'set {self._alias} time format milliseconds')
+        return self._loaded
+
+    def play(self, start_ms: int = 0) -> bool:
+        if not self._loaded:
+            return False
+        if start_ms > 0:
+            err, _ = self._send(f'play {self._alias} from {start_ms}')
+        else:
+            err, _ = self._send(f'play {self._alias}')
+        return err == 0
+
+    def pause(self) -> bool:
+        err, _ = self._send(f'pause {self._alias}')
+        return err == 0
+
+    def unpause(self) -> bool:
+        err, _ = self._send(f'resume {self._alias}')
+        return err == 0
+
+    def stop(self) -> bool:
+        err, _ = self._send(f'stop {self._alias}')
+        return err == 0
+
+    def close(self):
+        if self._loaded:
+            self._send(f'close {self._alias}')
+            self._loaded = False
+
+    def set_volume(self, volume: float):
+        """Set volume (0.0 to 1.0)."""
+        vol = int(max(0, min(1000, volume * 1000)))
+        self._send(f'setaudio {self._alias} volume to {vol}')
+
+    def get_position_ms(self) -> int:
+        """Get current position in milliseconds."""
+        err, val = self._send(f'status {self._alias} position')
+        if err == 0 and val.isdigit():
+            return int(val)
+        return 0
+
+    def get_length_ms(self) -> int:
+        """Get total length in milliseconds."""
+        err, val = self._send(f'status {self._alias} length')
+        if err == 0 and val.isdigit():
+            return int(val)
+        return 0
+
+    def is_playing(self) -> bool:
+        """Check if currently playing."""
+        err, val = self._send(f'status {self._alias} mode')
+        if err == 0:
+            return val.strip().lower() == "playing"
+        return False
 
 
 class AudioPlayer:
@@ -42,14 +136,20 @@ class AudioPlayer:
         self.update_callback: Optional[Callable] = None
         self._monitor_thread: Optional[threading.Thread] = None
         self._stop_monitoring = False
+        self._mci: Optional[_MCIPlayer] = None
 
-        if not PYGAME_AVAILABLE:
+        if _BACKEND == 'mci':
+            self._mci = _MCIPlayer()
+
+        if _BACKEND is None:
             logger.warning("pygame not available - audio playback disabled")
+        else:
+            logger.info(f"Audio backend: {_BACKEND}")
 
     @staticmethod
     def is_available() -> bool:
         """Check if audio playback is available."""
-        return PYGAME_AVAILABLE
+        return _BACKEND is not None
 
     def load(self, file_path: str) -> bool:
         """
@@ -61,8 +161,8 @@ class AudioPlayer:
         Returns:
             True if loaded successfully
         """
-        if not PYGAME_AVAILABLE:
-            logger.error("pygame not available")
+        if _BACKEND is None:
+            logger.error("No audio backend available")
             return False
 
         if not os.path.exists(file_path):
@@ -73,17 +173,19 @@ class AudioPlayer:
             # Stop current playback
             self.stop()
 
-            # Load new file
-            pygame.mixer.music.load(file_path)
+            if _BACKEND == 'pygame':
+                pygame.mixer.music.load(file_path)
+                pygame.mixer.music.set_volume(self.volume)
+            elif _BACKEND == 'mci':
+                if not self._mci.load(file_path):
+                    logger.error(f"MCI failed to load: {file_path}")
+                    return False
+                self._mci.set_volume(self.volume)
+
             self.current_file = file_path
             self.state = PlaybackState.STOPPED
             self.position = 0.0
-
-            # Try to get duration (this is approximate with pygame)
-            # For more accurate duration, we'd need mutagen or similar
             self.duration = self._estimate_duration(file_path)
-
-            pygame.mixer.music.set_volume(self.volume)
 
             logger.info(f"Loaded audio file: {file_path}")
             return True
@@ -99,14 +201,20 @@ class AudioPlayer:
         Returns:
             True if playback started
         """
-        if not PYGAME_AVAILABLE or not self.current_file:
+        if _BACKEND is None or not self.current_file:
             return False
 
         try:
-            if self.state == PlaybackState.PAUSED:
-                pygame.mixer.music.unpause()
-            else:
-                pygame.mixer.music.play(start=self.position)
+            if _BACKEND == 'pygame':
+                if self.state == PlaybackState.PAUSED:
+                    pygame.mixer.music.unpause()
+                else:
+                    pygame.mixer.music.play(start=self.position)
+            elif _BACKEND == 'mci':
+                if self.state == PlaybackState.PAUSED:
+                    self._mci.unpause()
+                else:
+                    self._mci.play(start_ms=int(self.position * 1000))
 
             self.state = PlaybackState.PLAYING
             self._start_monitoring()
@@ -124,11 +232,15 @@ class AudioPlayer:
         Returns:
             True if paused
         """
-        if not PYGAME_AVAILABLE or self.state != PlaybackState.PLAYING:
+        if _BACKEND is None or self.state != PlaybackState.PLAYING:
             return False
 
         try:
-            pygame.mixer.music.pause()
+            if _BACKEND == 'pygame':
+                pygame.mixer.music.pause()
+            elif _BACKEND == 'mci':
+                self._mci.pause()
+
             self.state = PlaybackState.PAUSED
             logger.info("Playback paused")
             return True
@@ -144,7 +256,7 @@ class AudioPlayer:
         Returns:
             True if stopped
         """
-        if not PYGAME_AVAILABLE:
+        if _BACKEND is None:
             return False
 
         try:
@@ -152,7 +264,11 @@ class AudioPlayer:
             if self._monitor_thread:
                 self._monitor_thread.join(timeout=1.0)
 
-            pygame.mixer.music.stop()
+            if _BACKEND == 'pygame':
+                pygame.mixer.music.stop()
+            elif _BACKEND == 'mci':
+                self._mci.stop()
+
             self.state = PlaybackState.STOPPED
             self.position = 0.0
             logger.info("Playback stopped")
@@ -172,12 +288,10 @@ class AudioPlayer:
         Returns:
             True if seek successful
         """
-        if not PYGAME_AVAILABLE or not self.current_file:
+        if _BACKEND is None or not self.current_file:
             return False
 
         try:
-            # pygame doesn't support seeking easily
-            # We need to stop and restart from position
             was_playing = self.state == PlaybackState.PLAYING
 
             self.stop()
@@ -203,12 +317,17 @@ class AudioPlayer:
         Returns:
             True if volume set
         """
-        if not PYGAME_AVAILABLE:
+        if _BACKEND is None:
             return False
 
         try:
             self.volume = max(0.0, min(1.0, volume))
-            pygame.mixer.music.set_volume(self.volume)
+
+            if _BACKEND == 'pygame':
+                pygame.mixer.music.set_volume(self.volume)
+            elif _BACKEND == 'mci' and self._mci:
+                self._mci.set_volume(self.volume)
+
             return True
 
         except Exception as e:
@@ -219,29 +338,28 @@ class AudioPlayer:
         """
         Set playback speed.
 
-        Note: pygame doesn't support variable speed playback.
-        This is a placeholder for potential future implementation
-        using a different library (like pydub + sounddevice).
+        Note: Neither pygame nor MCI support variable speed playback.
 
         Args:
             speed: Playback speed (0.5 to 2.0)
 
         Returns:
-            False (not implemented in pygame)
+            False (not implemented)
         """
         self.speed = max(0.5, min(2.0, speed))
-        logger.warning("Speed adjustment not supported with pygame")
+        logger.warning("Speed adjustment not supported")
         return False
 
     def get_position(self) -> float:
         """Get current playback position in seconds."""
-        if self.state == PlaybackState.PLAYING and PYGAME_AVAILABLE:
-            # pygame.mixer.music.get_pos() returns milliseconds since start
-            # but it's not accurate for total position
+        if self.state == PlaybackState.PLAYING and _BACKEND is not None:
             try:
-                ms = pygame.mixer.music.get_pos()
-                if ms >= 0:
-                    return self.position + (ms / 1000.0)
+                if _BACKEND == 'pygame':
+                    ms = pygame.mixer.music.get_pos()
+                    if ms >= 0:
+                        return self.position + (ms / 1000.0)
+                elif _BACKEND == 'mci' and self._mci:
+                    return self._mci.get_position_ms() / 1000.0
             except:
                 pass
         return self.position
@@ -276,7 +394,13 @@ class AudioPlayer:
         """Monitor playback and update position."""
         while not self._stop_monitoring and self.state == PlaybackState.PLAYING:
             try:
-                if not pygame.mixer.music.get_busy():
+                busy = False
+                if _BACKEND == 'pygame':
+                    busy = pygame.mixer.music.get_busy()
+                elif _BACKEND == 'mci' and self._mci:
+                    busy = self._mci.is_playing()
+
+                if not busy:
                     # Playback finished
                     self.state = PlaybackState.STOPPED
                     self.position = 0.0
@@ -299,14 +423,18 @@ class AudioPlayer:
         """
         Estimate audio duration.
 
-        For now, returns 0. For actual duration, would need mutagen library.
-
         Args:
             file_path: Path to audio file
 
         Returns:
             Duration in seconds (or 0 if unknown)
         """
+        # MCI can report duration directly
+        if _BACKEND == 'mci' and self._mci:
+            length_ms = self._mci.get_length_ms()
+            if length_ms > 0:
+                return length_ms / 1000.0
+
         # Try to use mutagen if available
         try:
             from mutagen import File
@@ -323,26 +451,28 @@ class AudioPlayer:
     def cleanup(self):
         """Clean up resources."""
         self.stop()
-        if PYGAME_AVAILABLE:
+        if _BACKEND == 'pygame':
             try:
                 pygame.mixer.quit()
             except:
                 pass
+        elif _BACKEND == 'mci' and self._mci:
+            self._mci.close()
 
 
 def check_dependencies():
     """Check if required dependencies are installed."""
-    if not PYGAME_AVAILABLE:
-        print("❌ pygame is not installed")
+    if _BACKEND == 'pygame':
+        print("✓ Audio backend: pygame")
+    elif _BACKEND == 'mci':
+        print("✓ Audio backend: Windows MCI (built-in)")
+    else:
+        print("✗ No audio backend available")
         print("\nTo install pygame, run:")
-        print("  pip install pygame")
-        print("\nOr on some systems:")
-        print("  pip3 install pygame")
+        print("  pip install pygame-ce")
         print("\nOptional (for accurate duration info):")
         print("  pip install mutagen")
         return False
-
-    print("✓ pygame is installed")
 
     # Check for mutagen
     try:
@@ -359,8 +489,8 @@ if __name__ == "__main__":
     # Test audio player
     check_dependencies()
 
-    if PYGAME_AVAILABLE:
-        print("\nAudio player initialized successfully")
+    if _BACKEND is not None:
+        print(f"\nAudio player initialized successfully (backend: {_BACKEND})")
         print("Ready for podcast playback!")
     else:
-        print("\nAudio player unavailable - install pygame")
+        print("\nAudio player unavailable - install pygame-ce")

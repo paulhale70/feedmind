@@ -149,7 +149,7 @@ class AudioPlayerWidget(tk.Frame):
         if not self.player.is_available():
             messagebox.showwarning(
                 "Audio Unavailable",
-                "Audio playback requires pygame.\n\nInstall it with:\n  pip install pygame",
+                "No audio backend available.\n\nInstall pygame-ce:\n  pip install pygame-ce",
                 parent=self
             )
             return
@@ -215,7 +215,7 @@ class AudioPlayerWidget(tk.Frame):
     def _update_controls(self):
         """Update control button states."""
         if not self.player.is_available():
-            self.episode_label.config(text="Audio unavailable — run: pip install pygame")
+            self.episode_label.config(text="Audio unavailable — run: pip install pygame-ce")
             self.play_pause_btn.config(text="▶ Play", state=tk.NORMAL)
             self.stop_btn.config(state=tk.DISABLED)
             return
@@ -262,7 +262,7 @@ def main():
     if not player.is_available():
         label = tk.Label(
             root,
-            text="Audio playback unavailable\nInstall pygame: pip install pygame",
+            text="Audio playback unavailable\nInstall pygame-ce: pip install pygame-ce",
             font=("Arial", 12)
         )
         label.pack(expand=True)
