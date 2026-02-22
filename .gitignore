@@ -25,6 +25,7 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # Logs
 *.log
@@ -32,6 +33,7 @@ logs/
 
 # Environment
 .env
+*.env
 
 # Testing
 .pytest_cache/

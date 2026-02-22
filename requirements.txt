@@ -1,31 +1,25 @@
-streamlit>=1.38.0
-pandas>=2.2.0
-sqlalchemy>=2.0.0
-openpyxl>=3.1.0
-Flask==3.0.2
-Pillow>=11.0.0
+# FeedMind - All dependencies are optional
+# The core app (feedmind.py) runs with zero pip installs.
 
-# Optional dependencies for RSSreaderV2 enhanced features
-# PDF export functionality
+# --- PDF export ---
 reportlab>=4.0.0
 
-# Desktop notifications
+# --- Desktop notifications ---
 plyer>=2.1.0
 
-# V3 dependencies for podcast support
-# Audio playback
-pygame>=2.5.0
+# --- Podcast audio playback ---
+# Not needed on Windows (built-in MCI backend is used automatically).
+# Install only if pygame is preferred or you're on macOS/Linux.
+# pygame-ce>=2.5.0
 
-# Audio metadata (optional, for accurate duration info)
+# --- Audio metadata (optional, for duration info) ---
+# Not needed on Windows (MCI queries duration directly).
 mutagen>=1.47.0
 
-# V3.5 dependencies for AI and article extraction
-# Full-text article extraction
+# --- AI-powered summarization ---
+anthropic>=0.18.0    # Claude API
+openai>=1.12.0       # OpenAI API
+
+# --- Full-text article extraction ---
 newspaper3k>=0.2.8
-
-# Alternative lightweight extraction (optional)
 trafilatura>=1.6.0
-
-# AI-powered summarization
-anthropic>=0.18.0  # Claude API
-openai>=1.12.0     # OpenAI API

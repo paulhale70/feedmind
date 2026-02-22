@@ -25,19 +25,19 @@ Most RSS readers just show you articles. **FeedMind helps you understand them.**
 ### Installation
 
 ```bash
-# Install base features
-pip install -r requirements.txt
-
-# Run FeedMind v3.7 (full-featured, no API needed)
+# No pip installs required — just run it!
 python feedmind.py
+
+# Or install optional features as needed:
+pip install reportlab          # PDF export
+pip install plyer              # Desktop notifications
+pip install anthropic          # AI summaries (Claude)
+pip install newspaper3k        # Full-text extraction
 ```
 
 ### Optional AI Features
 
 ```bash
-# Install AI capabilities
-pip install anthropic newspaper3k
-
 # Set your Claude API key
 export RSS_API_KEY_CLAUDE="your-api-key"
 ```
@@ -185,21 +185,16 @@ The player will appear automatically when you select a podcast episode!
 
 ## 🛠️ Technology Stack
 
-**Core:**
+**Core (zero pip installs needed):**
 - Python 3.9+ / SQLite / Tkinter
+- Windows MCI audio backend (built-in, no installs)
 
-**AI & Extraction:**
-- Anthropic Claude API
-- OpenAI GPT API
-- newspaper3k / trafilatura
-
-**Podcast:**
-- pygame (audio playback)
-- mutagen (metadata)
-
-**Optional:**
+**All optional — install only what you need:**
 - reportlab (PDF export)
-- plyer (notifications)
+- plyer (desktop notifications)
+- anthropic / openai (AI summaries)
+- newspaper3k / trafilatura (full-text extraction)
+- pygame-ce (audio on macOS/Linux — Windows uses MCI automatically)
 
 ---
 
