@@ -69,19 +69,17 @@ pip3 install -r requirements.txt
 
 ### Step 4: Run FeedMind
 
-**Start FeedMind V2** (Recommended - full features, no API needed):
-
 **Windows:**
 ```bash
-python rss_reader_v2.py
+python feedmind.py
 ```
 
 **Mac/Linux:**
 ```bash
-python3 rss_reader_v2.py
+python3 feedmind.py
 ```
 
-🎉 **That's it! FeedMind should open.**
+FeedMind should open.
 
 ---
 
@@ -154,64 +152,16 @@ pip install reportlab plyer
 
 ---
 
-## Feature Versions
+## Features
 
-Choose which version to run based on your needs:
+FeedMind includes all features in a single application (`feedmind.py`):
 
-### FeedMind V1 (Basic)
-```bash
-python rss_reader.py  # or python3 on Mac/Linux
-```
-**Features:**
-- RSS/Atom feed reading
-- Offline caching
-- Read/unread tracking
-- Favorites & search
-- Auto-refresh
-
-### FeedMind V2 (Enhanced) ⭐ Recommended
-```bash
-python rss_reader_v2.py  # or python3 on Mac/Linux
-```
-**Features:**
-- Everything in V1, plus:
-- Categories & folders
-- OPML import/export
-- Dark mode (Ctrl+T)
-- Reading statistics (Ctrl+S)
-- PDF export (Ctrl+P)
-- Desktop notifications
-- Keyboard shortcuts
-
-### FeedMind V3 (Podcasts)
-
-**Note:** V3 is library-based. V2 GUI can use V3 features when you install podcast dependencies.
-
-**Test V3 features:**
-```bash
-python test_v3_features.py
-```
-
-**Features:**
-- Everything in V2, plus:
-- Podcast auto-detection
-- Audio player
-- Episode downloads
-- Smart auto-refresh
-
-### FeedMind V3.5 (AI-Powered) 🤖 Latest
-
-**Test AI features:**
-```bash
-python test_ai_extraction.py
-```
-
-**Features:**
-- Everything in V3, plus:
-- AI summarization
-- TL;DR generation
-- Key points extraction
-- Full-text article extraction
+- RSS/Atom feed reading with categories and OPML import/export
+- Dark mode, reading statistics, PDF export, desktop notifications
+- Podcast support with built-in audio player and episode downloads
+- Video podcast support (opens in system player)
+- AI-powered article summarization (optional, requires API key)
+- Article sorting, 7-day filter, feed bookmarks
 
 ---
 
@@ -341,7 +291,7 @@ pip install pygame mutagen
 
 **Fix:**
 1. Close FeedMind
-2. Delete database file: `rss_reader_v2.db`
+2. Delete database file: `feedmind.db`
 3. Restart FeedMind
 4. Re-add feeds
 
@@ -359,32 +309,13 @@ pip install pygame mutagen
 
 ### Test Base Installation
 ```bash
-python rss_reader_v2.py
+python feedmind.py
 ```
 Should open without errors.
 
-### Test V3 Features
+### Run Tests
 ```bash
-python test_v3_features.py
-```
-Should show podcast and auto-refresh tests.
-
-### Test AI Features
-```bash
-python test_ai_extraction.py
-```
-Should show extraction and AI capability tests.
-
-### Test Specific Module
-```bash
-# Test RSS parsing
-python rss_core.py
-
-# Test database
-python rss_database_v3.py
-
-# Test audio player
-python rss_audio_player.py
+python -m pytest tests/
 ```
 
 ---
@@ -456,17 +387,11 @@ export RSS_DATABASE_PATH="/path/to/custom/feedmind.db"
 
 ## File Locations
 
-**Database:**
-- V1: `rss_reader.db`
-- V2: `rss_reader_v2.db`
-- V3/V3.5: `rss_reader_v3.db`
+**Database:** `feedmind.db` (SQLite, auto-created on first run)
 
-**Downloaded Podcasts:**
-- Default: `podcast_downloads/` folder
+**Downloaded Podcasts:** `podcast_downloads/` folder
 
-**Configuration:**
-- Stored in database settings table
-- API keys in environment variables (recommended)
+**Configuration:** Stored in database settings table; API keys via environment variables
 
 ---
 
@@ -493,9 +418,8 @@ When new version is released:
 
 **Documentation:**
 - [Main README](README.md) - Overview and quick start
-- [V2 Features](RSS_V2_FEATURES.md) - Categories, OPML, dark mode
-- [V3 Podcast Guide](RSS_V3_FEATURES.md) - Audio features
-- [AI Features Guide](RSS_AI_FEATURES.md) - Summarization & extraction
+- [Podcast Guide](docs/RSS_V3_FEATURES.md) - Audio features
+- [AI Features Guide](docs/RSS_AI_FEATURES.md) - Summarization & extraction
 
 **Testing:**
 - Run test scripts to verify functionality
@@ -534,7 +458,7 @@ Installation:
 - [ ] Python 3.9+ installed
 - [ ] FeedMind downloaded
 - [ ] Base dependencies installed (`pip install -r requirements.txt`)
-- [ ] FeedMind V2 runs successfully
+- [ ] FeedMind runs successfully (`python feedmind.py`)
 
 Optional Features:
 - [ ] Podcast support installed (`pip install pygame mutagen`)

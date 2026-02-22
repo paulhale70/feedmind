@@ -1,10 +1,4 @@
-# Wildcat
-
-This is a learn to code project featuring multiple applications.
-
----
-
-# FeedMind 🧠
+# FeedMind
 
 **AI-Powered RSS Reader with Podcast & Video Support**
 
@@ -46,9 +40,6 @@ pip install anthropic newspaper3k
 
 # Set your Claude API key
 export RSS_API_KEY_CLAUDE="your-api-key"
-
-# Test AI features
-python test_ai_extraction.py
 ```
 
 ### Sample Feeds to Try
@@ -104,23 +95,6 @@ BBC News: http://feeds.bbci.co.uk/news/rss.xml
 - ✓ **Article sorting** (v3.7) - Sort by date, title, or feed name
 - ✓ **7-day article filter** (v3.7) - Focus on recent content
 - ✓ **Feed bookmarks** (v3.7) - Pin important feeds with 📌 icon
-
-**Run FeedMind v3.7:**
-```bash
-python feedmind.py
-```
-
-### V3.5: AI-Powered ⭐ Latest
-- ✓ **AI Summarization** (Claude/OpenAI)
-- ✓ **TL;DR generation** (1-2 sentences)
-- ✓ **Key points extraction** (bullet points)
-- ✓ **Full-text extraction** from web pages
-- ✓ **API key management**
-
-**Test AI Features:**
-```bash
-python test_ai_extraction.py
-```
 
 ---
 
@@ -199,11 +173,13 @@ The player will appear automatically when you select a podcast episode!
 
 ---
 
-## 📖 Complete Documentation
+## Documentation
 
-- **[V2 Features Guide](RSS_V2_FEATURES.md)** - Categories, OPML, dark mode, shortcuts
-- **[V3 Podcast Guide](RSS_V3_FEATURES.md)** - Audio player, downloads, auto-refresh
-- **[AI Features Guide](RSS_AI_FEATURES.md)** - Summarization, extraction, API setup
+- **[Setup Guide](SETUP.md)** - Installation and configuration
+- **[Changelog](CHANGELOG.md)** - Release history
+- **[Podcast Guide](docs/RSS_V3_FEATURES.md)** - Audio player, downloads, auto-refresh
+- **[AI Features Guide](docs/RSS_AI_FEATURES.md)** - Summarization, extraction, API setup
+- **[Build Guide](docs/WINDOWS_EXE_BUILD_GUIDE.md)** - Windows .exe packaging
 
 ---
 
@@ -255,27 +231,7 @@ The player will appear automatically when you select a podcast episode!
 
 ---
 
-## ⚡ Quick Feature Comparison
-
-| Feature | V1 | V2 | V3 | V3.5 |
-|---------|----|----|-----|------|
-| RSS/Atom parsing | ✓ | ✓ | ✓ | ✓ |
-| Offline reading | ✓ | ✓ | ✓ | ✓ |
-| Categories | - | ✓ | ✓ | ✓ |
-| OPML import/export | - | ✓ | ✓ | ✓ |
-| Dark mode | - | ✓ | ✓ | ✓ |
-| PDF export | - | ✓ | ✓ | ✓ |
-| Reading stats | - | ✓ | ✓ | ✓ |
-| Podcast player | - | - | ✓ | ✓ |
-| Episode downloads | - | - | ✓ | ✓ |
-| Auto-refresh | - | - | ✓ | ✓ |
-| **AI TL;DR** | - | - | - | **✓** |
-| **AI summaries** | - | - | - | **✓** |
-| **Full-text extraction** | - | - | - | **✓** |
-
----
-
-## 🔐 Privacy & Security
+## Privacy & Security
 
 **Your Data, Your Machine**
 - All data stored in local SQLite database
@@ -290,17 +246,14 @@ The player will appear automatically when you select a podcast episode!
 
 ---
 
-## 🗺️ Roadmap
+## Roadmap
 
 ### Planned Features
 - [ ] Mobile companion app
 - [ ] Cloud sync (optional)
-- [ ] Video podcast support
 - [ ] Local AI models (no API costs)
 - [ ] Browser extension
 - [ ] Email digest feature
-- [ ] Collaborative feeds
-- [ ] Multi-language support
 
 ---
 
@@ -326,20 +279,3 @@ MIT License - see LICENSE file for details
 
 *Smart feeds. Smarter reading.*
 
----
-
----
-
-# Other Projects in this Repository
-
-## Dash - Streamlit Data Dashboard
-
-Run the Streamlit dashboard to ingest Excel data, explore it, connect to a database, and export datasets:
-
-```bash
-pip install -r requirements.txt
-streamlit run dash.py
-```
-
-### Send a Report
-Inside the dashboard, open **Send report**, fill in your SMTP server details (STARTTLS, SSL, or none), recipients, and click **Test SMTP connection** to verify settings. Then choose **Send report** to email a CSV snapshot of the active dataset. Credentials are kept in session state only.
