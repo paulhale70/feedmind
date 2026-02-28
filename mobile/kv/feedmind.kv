@@ -1,0 +1,138 @@
+#:kivy 2.3.0
+
+# Feed List Screen
+<FeedListScreen>:
+    name: 'feeds'
+
+    MDBoxLayout:
+        orientation: 'vertical'
+
+        # Top app bar
+        MDTopAppBar:
+            title: "Feeds"
+            right_action_items: [["plus", lambda x: root.show_add_feed_dialog()], ["theme-light-dark", lambda x: app.toggle_theme()]]
+            elevation: 2
+
+        # Feed list (scrollable)
+        ScrollView:
+            MDList:
+                id: feed_list
+
+        # Floating action button for adding feeds
+        MDFloatingActionButton:
+            icon: "rss"
+            pos_hint: {"center_x": .9, "center_y": .1}
+            on_release: root.show_add_feed_dialog()
+            md_bg_color: app.theme_cls.primary_color
+
+# Article List Screen
+<ArticleListScreen>:
+    name: 'articles'
+
+    MDBoxLayout:
+        orientation: 'vertical'
+
+        # Top app bar
+        MDTopAppBar:
+            title: "Articles"
+            left_action_items: [["arrow-left", lambda x: setattr(app.screen_manager, 'current', 'feeds')]]
+            right_action_items: [["refresh", lambda x: root.refresh_articles()]]
+            elevation: 2
+
+        # Filter chips
+        MDBoxLayout:
+            size_hint_y: None
+            height: "48dp"
+            padding: "8dp"
+            spacing: "8dp"
+
+            MDChip:
+                text: "All"
+                on_release: root.set_view_filter('all')
+                icon_left: "format-list-bulleted"
+
+            MDChip:
+                text: "Unread"
+                on_release: root.set_view_filter('unread')
+                icon_left: "email-mark-as-unread"
+
+            MDChip:
+                text: "Favorites"
+                on_release: root.set_view_filter('favorites')
+                icon_left: "heart"
+
+        # Article list (scrollable)
+        ScrollView:
+            MDList:
+                id: article_list
+
+# Article Reader Screen
+<ArticleReaderScreen>:
+    name: 'reader'
+
+    MDBoxLayout:
+        orientation: 'vertical'
+
+        # Top app bar
+        MDTopAppBar:
+            title: "Article"
+            left_action_items: [["arrow-left", lambda x: root.go_back()]]
+            right_action_items: [["heart-outline", lambda x: root.toggle_favorite()], ["share-variant", lambda x: root.share_article()], ["web", lambda x: root.open_in_browser()]]
+            elevation: 2
+
+        # Article content (scrollable)
+        ScrollView:
+            MDBoxLayout:
+                orientation: 'vertical'
+                padding: "16dp"
+                spacing: "12dp"
+                size_hint_y: None
+                height: self.minimum_height
+
+                # Article title
+                MDLabel:
+                    id: article_title
+                    text: root.article_title
+                    font_style: "H5"
+                    size_hint_y: None
+                    height: self.texture_size[1]
+                    theme_text_color: "Primary"
+
+                # Metadata (feed, date)
+                MDLabel:
+                    text: root.article.get('feed_title', '') + " • " + root.article.get('published', '')[:10] if root.article else ""
+                    font_style: "Caption"
+                    size_hint_y: None
+                    height: self.texture_size[1]
+                    theme_text_color: "Hint"
+
+                # Divider
+                MDSeparator:
+
+                # Article content
+                MDLabel:
+                    id: article_content
+                    text: root.article_content
+                    font_style: "Body1"
+                    size_hint_y: None
+                    height: self.texture_size[1]
+                    theme_text_color: "Primary"
+                    markup: True
+
+        # Action buttons
+        MDBoxLayout:
+            size_hint_y: None
+            height: "56dp"
+            padding: "8dp"
+            spacing: "8dp"
+
+            MDRaisedButton:
+                text: "Extract Full Text"
+                on_release: root.extract_full_text()
+                size_hint_x: 1
+                md_bg_color: app.theme_cls.primary_color
+
+            MDIconButton:
+                id: favorite_button
+                icon: "heart-outline"
+                on_release: root.toggle_favorite()
