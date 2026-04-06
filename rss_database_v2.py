@@ -312,15 +312,23 @@ class RSSDatabase:
         self.conn.commit()
         return cursor.rowcount > 0
 
-    def get_favorites(self, limit: int = 100) -> list[dict]:
-        """Get all favorite articles."""
+    def get_favorites(self, feed_url: Optional[str] = None, limit: int = 100) -> list[dict]:
+        """Get all favorite articles, optionally filtered by feed URL."""
         cursor = self.conn.cursor()
-        cursor.execute("""
-            SELECT * FROM articles
-            WHERE is_favorite = 1
-            ORDER BY published DESC, cached_date DESC
-            LIMIT ?
-        """, (limit,))
+        if feed_url:
+            cursor.execute("""
+                SELECT * FROM articles
+                WHERE is_favorite = 1 AND feed_url = ?
+                ORDER BY published DESC, cached_date DESC
+                LIMIT ?
+            """, (feed_url, limit))
+        else:
+            cursor.execute("""
+                SELECT * FROM articles
+                WHERE is_favorite = 1
+                ORDER BY published DESC, cached_date DESC
+                LIMIT ?
+            """, (limit,))
         return [dict(row) for row in cursor.fetchall()]
 
     def get_unread_count(self, feed_url: Optional[str] = None) -> int:
@@ -409,6 +417,7 @@ class RSSDatabase:
         deleted = cursor.rowcount
         self.conn.commit()
         logger.info(f"Deleted {deleted} old articles")
+        return deleted
 
     # Statistics
     def _increment_reading_stat(self):
