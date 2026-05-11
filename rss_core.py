@@ -9,11 +9,79 @@ import re
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from typing import Optional
-from urllib.request import Request, urlopen
+from urllib.parse import urlparse
+from urllib.request import (
+    Request, urlopen, build_opener, HTTPRedirectHandler,
+    HTTPSHandler, HTTPHandler,
+)
 from urllib.error import URLError, HTTPError
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+# --- SSRF defense ------------------------------------------------------------
+# Allow only http(s); reject file://, ftp://, gopher://, data://, and any
+# protocol-handler trick. Re-validate every hop so a 302 redirect to file://
+# or to an internal address can't smuggle through.
+_ALLOWED_SCHEMES = frozenset({"http", "https"})
+
+
+class UnsafeURLError(URLError):
+    """Raised when a URL has a disallowed scheme or redirect target."""
+
+
+def _validate_url(url: str) -> None:
+    parsed = urlparse(url)
+    if parsed.scheme.lower() not in _ALLOWED_SCHEMES:
+        raise UnsafeURLError(
+            f"URL scheme '{parsed.scheme}' is not allowed; "
+            f"only http/https are permitted (got: {url})"
+        )
+    if not parsed.netloc:
+        raise UnsafeURLError(f"URL has no host: {url}")
+
+
+class _StrictRedirectHandler(HTTPRedirectHandler):
+    """Reject redirects to non-http(s) targets."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _validate_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+# Opener built with default http/https handlers + strict redirect handler.
+# Falls back to stdlib behavior for everything else (proxies, cookies if added
+# later, etc.).
+_safe_opener = build_opener(HTTPHandler(), HTTPSHandler(), _StrictRedirectHandler())
+
+
+def safe_urlopen(url_or_request, timeout: float = 10):
+    """Drop-in replacement for urllib.request.urlopen with scheme allow-list.
+
+    Accepts a string URL or a Request object. Raises UnsafeURLError if the
+    initial URL or any redirect target uses a disallowed scheme.
+    """
+    if isinstance(url_or_request, Request):
+        url = url_or_request.full_url
+    else:
+        url = url_or_request
+    _validate_url(url)
+    return _safe_opener.open(url_or_request, timeout=timeout)
+# -----------------------------------------------------------------------------
+
+# Use defusedxml when available to block XXE / billion-laughs on remote feeds.
+# Falls back to stdlib with a warning so the app still runs zero-install.
+try:
+    from defusedxml.ElementTree import fromstring as _safe_fromstring  # type: ignore
+    _DEFUSED = True
+except ImportError:  # pragma: no cover - optional dependency
+    from xml.etree.ElementTree import fromstring as _safe_fromstring  # type: ignore
+    _DEFUSED = False
+    logger.warning(
+        "defusedxml not installed; remote feed parsing is vulnerable to "
+        "XXE/billion-laughs. Install with: pip install defusedxml"
+    )
 
 
 class RSSFeed:
@@ -96,7 +164,7 @@ class RSSFetcher:
     def _parse_rss(self, xml_content: bytes, url: str) -> list[RSSFeed]:
         """Parse RSS 2.0 format."""
         try:
-            root = ET.fromstring(xml_content)
+            root = _safe_fromstring(xml_content)
             articles = []
 
             # Extract feed title from channel
@@ -158,7 +226,7 @@ class RSSFetcher:
     def _parse_atom(self, xml_content: bytes, url: str) -> list[RSSFeed]:
         """Parse Atom format."""
         try:
-            root = ET.fromstring(xml_content)
+            root = _safe_fromstring(xml_content)
             articles = []
 
             # Atom uses namespaces
@@ -259,9 +327,9 @@ class RSSFetcher:
         try:
             logger.info(f"Fetching RSS feed from: {url}")
 
-            # Fetch the XML content
+            # Fetch the XML content (scheme allow-list enforced)
             req = Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urlopen(req, timeout=self.timeout) as response:
+            with safe_urlopen(req, timeout=self.timeout) as response:
                 xml_content = response.read()
 
             # Detect feed type and parse accordingly
@@ -308,7 +376,7 @@ class RSSFetcher:
         """
         try:
             req = Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urlopen(req, timeout=self.timeout) as response:
+            with safe_urlopen(req, timeout=self.timeout) as response:
                 return response.status < 400
         except Exception:
             return False

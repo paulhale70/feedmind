@@ -8,8 +8,10 @@ import os
 import threading
 from pathlib import Path
 from typing import Optional, Callable
-from urllib.request import Request, urlopen
+from urllib.request import Request
 from urllib.error import URLError, HTTPError
+
+from rss_core import safe_urlopen
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -77,9 +79,9 @@ class PodcastDownloader:
         try:
             logger.info(f"Starting download: {audio_url}")
 
-            # Open URL
+            # Open URL (scheme allow-list enforced)
             req = Request(audio_url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urlopen(req, timeout=30) as response:
+            with safe_urlopen(req, timeout=30) as response:
                 total_size = int(response.headers.get('Content-Length', 0))
                 downloaded = 0
                 chunk_size = 8192

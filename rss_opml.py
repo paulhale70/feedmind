@@ -4,12 +4,25 @@ Handles reading and writing OPML subscription files.
 """
 
 import logging
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET  # used only for *writing* (safe)
 from datetime import datetime
 from typing import List, Dict, Optional
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Use defusedxml for *parsing* untrusted OPML files to block XXE and
+# billion-laughs attacks. Fall back with a warning if not installed.
+try:
+    from defusedxml.ElementTree import parse as _safe_parse  # type: ignore
+    _DEFUSED = True
+except ImportError:  # pragma: no cover - optional dependency
+    from xml.etree.ElementTree import parse as _safe_parse  # type: ignore
+    _DEFUSED = False
+    logger.warning(
+        "defusedxml not installed; OPML parsing falls back to xml.etree "
+        "which is vulnerable to XXE/billion-laughs. Install with: pip install defusedxml"
+    )
 
 
 class OPMLHandler:
@@ -92,7 +105,7 @@ class OPMLHandler:
             Dictionary with 'categories' and 'feeds' lists
         """
         try:
-            tree = ET.parse(file_path)
+            tree = _safe_parse(file_path)
             root = tree.getroot()
 
             if root.tag != 'opml':
@@ -173,7 +186,7 @@ class OPMLHandler:
             True if valid OPML
         """
         try:
-            tree = ET.parse(file_path)
+            tree = _safe_parse(file_path)
             root = tree.getroot()
             return root.tag == 'opml' and root.find('body') is not None
         except Exception:

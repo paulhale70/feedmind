@@ -26,23 +26,36 @@ class AutoRefreshScheduler:
         self.default_interval = default_interval_minutes
         self.enabled = False
         self.refresh_callback: Optional[Callable] = None
+        self.get_feeds_callback: Optional[Callable] = None
         self._worker_thread: Optional[threading.Thread] = None
         self._stop_flag = threading.Event()
         self.last_refresh_time = {}  # feed_url -> datetime
 
-    def start(self, refresh_callback: Callable[[str], None]):
+    def start(self, refresh_callback: Callable[[str], None],
+              get_feeds_callback: Optional[Callable[[], List[Dict]]] = None):
         """
         Start the auto-refresh scheduler.
 
         Args:
             refresh_callback: Function to call when a feed needs refresh.
                              Takes feed_url as parameter.
+            get_feeds_callback: Function returning a list of feed dicts with
+                             keys 'url', 'refresh_interval_minutes' (optional),
+                             and 'last_refresh' (optional ISO datetime). Without
+                             this, no feeds will be checked (the worker will warn).
         """
         if self.enabled:
             logger.warning("Scheduler already running")
             return
 
         self.refresh_callback = refresh_callback
+        self.get_feeds_callback = get_feeds_callback
+        if get_feeds_callback is None:
+            logger.warning(
+                "AutoRefreshScheduler started without get_feeds_callback; "
+                "no feeds will be auto-refreshed. Pass a callable returning "
+                "the feed list to enable polling."
+            )
         self.enabled = True
         self._stop_flag.clear()
 
@@ -87,9 +100,33 @@ class AutoRefreshScheduler:
 
     def _check_and_refresh(self):
         """Check feeds and trigger refresh for those that need it."""
-        # This method will be called every minute
-        # Actual implementation will query the database through callback
-        pass
+        if not self.get_feeds_callback or not self.refresh_callback:
+            return
+
+        try:
+            feeds = self.get_feeds_callback() or []
+        except Exception as e:
+            logger.exception(f"get_feeds_callback raised: {e}")
+            return
+
+        for feed in feeds:
+            if self._stop_flag.is_set() or not self.enabled:
+                return
+
+            url = feed.get('url')
+            if not url:
+                continue
+
+            interval = feed.get('refresh_interval_minutes') or self.default_interval
+            last_refresh = feed.get('last_refresh')
+
+            if self.should_refresh(url, interval, last_refresh):
+                logger.info(f"Auto-refresh triggering for {url}")
+                try:
+                    self.refresh_callback(url)
+                    self.last_refresh_time[url] = datetime.now()
+                except Exception as e:
+                    logger.exception(f"refresh_callback failed for {url}: {e}")
 
     def should_refresh(self, feed_url: str, refresh_interval_minutes: int,
                       last_refresh: Optional[str] = None) -> bool:

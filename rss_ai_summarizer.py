@@ -71,11 +71,10 @@ class AISummarizer:
 
         elif self.provider == AIProvider.OPENAI and OPENAI_AVAILABLE:
             try:
-                openai.api_key = self.api_key
-                self.client = openai
+                self.client = openai.OpenAI(api_key=self.api_key)
                 logger.info("Initialized OpenAI client")
             except Exception as e:
-                logger.error(f"Failed to initialize OpenAI client: {e}")
+                logger.exception(f"Failed to initialize OpenAI client: {e}")
 
         elif self.provider == AIProvider.AUTO:
             # Try Claude first, then OpenAI
@@ -87,20 +86,19 @@ class AISummarizer:
                         self.model = "claude-3-haiku-20240307"
                     logger.info("Auto-selected Claude")
                     return
-                except:
-                    pass
+                except Exception as e:
+                    logger.exception(f"Claude auto-select failed: {e}")
 
             if OPENAI_AVAILABLE:
                 try:
-                    openai.api_key = self.api_key
-                    self.client = openai
+                    self.client = openai.OpenAI(api_key=self.api_key)
                     self.provider = AIProvider.OPENAI
                     if not self.model:
                         self.model = "gpt-3.5-turbo"
                     logger.info("Auto-selected OpenAI")
                     return
-                except:
-                    pass
+                except Exception as e:
+                    logger.exception(f"OpenAI auto-select failed: {e}")
 
     @staticmethod
     def is_available() -> bool:
@@ -278,7 +276,7 @@ TL;DR:"""
             return None
 
         try:
-            response = self.client.ChatCompletion.create(
+            response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": "You are a helpful assistant that summarizes articles concisely."},
@@ -288,7 +286,8 @@ TL;DR:"""
                 temperature=0.3
             )
 
-            return response.choices[0].message.content.strip()
+            content = response.choices[0].message.content
+            return content.strip() if content else None
 
         except Exception as e:
             logger.error(f"OpenAI API error: {e}")

@@ -10,8 +10,10 @@ This module helps users find RSS feed URLs from regular website URLs by:
 import re
 from typing import List, Dict, Optional
 from urllib.parse import urljoin, urlparse
-from urllib.request import urlopen, Request
+from urllib.request import Request
 from html.parser import HTMLParser
+
+from rss_core import safe_urlopen
 
 
 class FeedLinkParser(HTMLParser):
@@ -131,7 +133,7 @@ class RSSFeedFinder:
             }
             req = Request(url, headers=headers)
 
-            with urlopen(req, timeout=self.timeout) as response:
+            with safe_urlopen(req, timeout=self.timeout) as response:
                 html = response.read().decode('utf-8', errors='ignore')
 
             # Parse for feed links
@@ -200,7 +202,7 @@ class RSSFeedFinder:
             }
             req = Request(url, headers=headers)
 
-            with urlopen(req, timeout=5) as response:
+            with safe_urlopen(req, timeout=5) as response:
                 # Read first 1000 bytes to check for RSS/Atom markers
                 content = response.read(1000).decode('utf-8', errors='ignore')
 

@@ -1,6 +1,17 @@
 # FeedMind - All dependencies are optional
 # The core app (feedmind.py) runs with zero pip installs.
 
+# --- Security hardening (strongly recommended) ---
+# defusedxml: blocks XXE and billion-laughs attacks when parsing OPML and
+#             untrusted remote RSS/Atom feeds. Without it, FeedMind falls
+#             back to xml.etree and logs a warning at startup.
+defusedxml>=0.7.1
+# keyring:    stores Claude/OpenAI API keys in the OS credential manager
+#             (Windows Credential Manager, macOS Keychain, freedesktop
+#             Secret Service) instead of plaintext SQLite. Without it,
+#             keys fall back to the settings table and emit a warning.
+keyring>=24.0.0
+
 # --- PDF export ---
 reportlab>=4.0.0
 

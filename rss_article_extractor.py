@@ -5,8 +5,10 @@ Extracts complete article content from web pages.
 
 import logging
 from typing import Optional, Dict
-from urllib.request import Request, urlopen
+from urllib.request import Request
 from urllib.error import URLError, HTTPError
+
+from rss_core import safe_urlopen
 
 try:
     from newspaper import Article
@@ -158,9 +160,9 @@ class ArticleExtractor:
         try:
             logger.info(f"Extracting article with trafilatura: {url}")
 
-            # Download page
+            # Download page (scheme allow-list enforced)
             req = Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urlopen(req, timeout=self.timeout) as response:
+            with safe_urlopen(req, timeout=self.timeout) as response:
                 html = response.read()
 
             # Extract text

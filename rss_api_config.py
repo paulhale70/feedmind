@@ -1,6 +1,12 @@
 """
 API Configuration Manager for RSS Reader V3
 Secure storage of API keys and configuration.
+
+API keys are stored in the OS credential store via the `keyring` library
+(Windows Credential Manager on Windows, Keychain on macOS, Secret Service on
+Linux). If `keyring` is unavailable, falls back to the SQLite settings table
+with a loud warning — earlier versions stored keys in plaintext SQLite, so
+on first read we migrate any plaintext keys into the keyring and scrub the DB.
 """
 
 import os
@@ -11,6 +17,24 @@ from rss_database_v3 import RSSDatabase
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Keyring service name used to namespace our entries in the OS credential store.
+_KEYRING_SERVICE = "feedmind"
+
+try:
+    import keyring as _keyring  # type: ignore
+    # Probe: if no usable backend is present (e.g. headless Linux without
+    # SecretService), keyring raises on first use rather than import. We defer
+    # the check to actual get/set calls.
+    _KEYRING_AVAILABLE = True
+except ImportError:  # pragma: no cover - optional dependency
+    _keyring = None
+    _KEYRING_AVAILABLE = False
+    logger.warning(
+        "'keyring' is not installed; API keys will fall back to SQLite "
+        "(less secure, especially in synced folders like OneDrive). "
+        "Install with: pip install keyring"
+    )
 
 
 class APIConfigManager:
@@ -27,9 +51,60 @@ class APIConfigManager:
         if not self.db:
             self.db = RSSDatabase()
 
+    # ------------------------------------------------------------------
+    # Storage backend helpers
+    # ------------------------------------------------------------------
+    def _keyring_set(self, provider: str, api_key: str) -> bool:
+        """Store a key in the OS credential store. Returns True on success."""
+        if not _KEYRING_AVAILABLE:
+            return False
+        try:
+            _keyring.set_password(_KEYRING_SERVICE, provider, api_key)
+            return True
+        except Exception as e:
+            logger.exception(f"keyring.set_password failed for {provider}: {e}")
+            return False
+
+    def _keyring_get(self, provider: str) -> Optional[str]:
+        if not _KEYRING_AVAILABLE:
+            return None
+        try:
+            return _keyring.get_password(_KEYRING_SERVICE, provider)
+        except Exception as e:
+            logger.exception(f"keyring.get_password failed for {provider}: {e}")
+            return None
+
+    def _keyring_delete(self, provider: str) -> bool:
+        if not _KEYRING_AVAILABLE:
+            return False
+        try:
+            _keyring.delete_password(_KEYRING_SERVICE, provider)
+            return True
+        except _keyring.errors.PasswordDeleteError:  # type: ignore[attr-defined]
+            return False
+        except Exception as e:
+            logger.exception(f"keyring.delete_password failed for {provider}: {e}")
+            return False
+
+    def _db_delete_key(self, provider: str) -> None:
+        """Scrub a legacy plaintext key from the settings table."""
+        key_name = f"api_key_{provider}"
+        try:
+            cursor = self.db.conn.cursor()
+            cursor.execute("DELETE FROM settings WHERE key = ?", (key_name,))
+            self.db.conn.commit()
+        except Exception as e:
+            logger.exception(f"Failed to scrub legacy key for {provider}: {e}")
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
     def set_api_key(self, provider: str, api_key: str) -> bool:
         """
         Store an API key.
+
+        Prefers the OS credential store via `keyring`. Falls back to the
+        SQLite settings table only when keyring is unavailable.
 
         Args:
             provider: Provider name (e.g., 'claude', 'openai')
@@ -38,14 +113,29 @@ class APIConfigManager:
         Returns:
             True if successful
         """
+        if self._keyring_set(provider, api_key):
+            # Belt-and-braces: if a legacy plaintext copy exists, remove it.
+            self._db_delete_key(provider)
+            logger.info(f"Stored API key for {provider} in OS credential store")
+            return True
+
+        # Fallback: SQLite (insecure — warn the user).
         key_name = f"api_key_{provider}"
         self.db.set_setting(key_name, api_key)
-        logger.info(f"Stored API key for {provider}")
+        logger.warning(
+            f"Stored API key for {provider} in SQLite (insecure fallback). "
+            f"Install 'keyring' for secure storage."
+        )
         return True
 
     def get_api_key(self, provider: str) -> Optional[str]:
         """
         Retrieve an API key.
+
+        Resolution order: environment variable → OS credential store →
+        SQLite settings table (legacy). If a legacy SQLite key is found and
+        keyring is available, it is migrated into the credential store and
+        scrubbed from the database before being returned.
 
         Args:
             provider: Provider name
@@ -53,38 +143,56 @@ class APIConfigManager:
         Returns:
             API key or None
         """
-        key_name = f"api_key_{provider}"
-
-        # First check environment variable
+        # 1. Environment variable always wins.
         env_var = f"RSS_API_KEY_{provider.upper()}"
         env_key = os.environ.get(env_var)
         if env_key:
             return env_key
 
-        # Then check database
+        # 2. OS credential store.
+        kr_key = self._keyring_get(provider)
+        if kr_key:
+            return kr_key
+
+        # 3. Legacy SQLite — migrate on read if possible.
+        key_name = f"api_key_{provider}"
         db_key = self.db.get_setting(key_name)
+        if db_key:
+            if _KEYRING_AVAILABLE and self._keyring_set(provider, db_key):
+                self._db_delete_key(provider)
+                logger.info(
+                    f"Migrated legacy plaintext API key for {provider} "
+                    f"from SQLite to OS credential store"
+                )
         return db_key
 
     def remove_api_key(self, provider: str) -> bool:
         """
-        Remove a stored API key.
+        Remove a stored API key from both storage backends.
 
         Args:
             provider: Provider name
 
         Returns:
-            True if successful
+            True if at least one backend reported success.
         """
-        key_name = f"api_key_{provider}"
+        removed_anywhere = False
+        if self._keyring_delete(provider):
+            removed_anywhere = True
         try:
             cursor = self.db.conn.cursor()
-            cursor.execute("DELETE FROM settings WHERE key = ?", (key_name,))
+            cursor.execute(
+                "DELETE FROM settings WHERE key = ?", (f"api_key_{provider}",)
+            )
+            if cursor.rowcount > 0:
+                removed_anywhere = True
             self.db.conn.commit()
-            logger.info(f"Removed API key for {provider}")
-            return True
         except Exception as e:
-            logger.error(f"Failed to remove API key: {e}")
-            return False
+            logger.exception(f"Failed to remove API key from DB: {e}")
+            return removed_anywhere
+        if removed_anywhere:
+            logger.info(f"Removed API key for {provider}")
+        return removed_anywhere
 
     def list_configured_providers(self) -> list[str]:
         """
@@ -93,20 +201,29 @@ class APIConfigManager:
         Returns:
             List of provider names
         """
-        providers = []
+        providers: list[str] = []
 
-        # Check database
+        # Legacy SQLite entries (will be migrated lazily on read).
         cursor = self.db.conn.cursor()
         cursor.execute("""
             SELECT key FROM settings WHERE key LIKE 'api_key_%'
         """)
-
         for row in cursor.fetchall():
-            key = row[0]
-            provider = key.replace('api_key_', '')
+            provider = row[0].replace('api_key_', '')
             providers.append(provider)
 
-        # Check environment variables
+        # OS credential store entries. keyring has no portable enumeration API,
+        # so probe the providers we know about.
+        if _KEYRING_AVAILABLE:
+            for provider in ("claude", "openai"):
+                try:
+                    if _keyring.get_password(_KEYRING_SERVICE, provider):
+                        if provider not in providers:
+                            providers.append(provider)
+                except Exception:
+                    pass
+
+        # Environment variables.
         for env_var in os.environ:
             if env_var.startswith('RSS_API_KEY_'):
                 provider = env_var.replace('RSS_API_KEY_', '').lower()
