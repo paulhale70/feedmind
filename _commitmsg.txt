@@ -1,0 +1,22 @@
+Address remaining review items: video safety, shutdown, perf, audio, robustness
+
+- Video player: load_video/_play_video now reject files whose extension
+  isn't a recognized video type, so a downloaded enclosure with an
+  attacker-chosen name can't be handed to os.startfile/xdg-open.
+- Graceful shutdown: _on_closing waits briefly for in-flight podcast
+  downloads to finish (so files/DB rows aren't truncated) and calls
+  audio_player.cleanup() to stop the MCI/pygame backend and its poller.
+- Performance: add get_all_unread_counts() (one grouped query) and use it
+  in _load_feeds instead of one COUNT query per feed.
+- Audio seek bar: wire it up — seek on mouse release (not continuously),
+  and hold the handle while the user drags so the poller doesn't fight
+  them. Clamp the pygame position to the track duration.
+- Robustness: cap untrusted feed titles in notifications, bound OPML
+  recursion depth, and make the PDF text cleaner decode entities via
+  html.unescape, strip tags, truncate on plain text, then XML-escape so
+  stray & / < can't break reportlab markup.
+- Document that AutoRefreshScheduler's refresh_callback runs on a worker
+  thread (GUI callers must marshal to the main thread). The desktop app
+  already schedules auto-refresh via root.after, so it's unaffected.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>

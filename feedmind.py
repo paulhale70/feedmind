@@ -684,8 +684,10 @@ class FeedMind:
         # V3.7: Sort bookmarked feeds first
         feeds.sort(key=lambda f: (not f.get('is_bookmarked', 0), f['title']))
 
+        # One grouped query instead of one per feed.
+        unread_counts = self.db.get_all_unread_counts()
         for feed in feeds:
-            unread = self.db.get_unread_count(feed['url'])
+            unread = unread_counts.get(feed['url'], 0)
             # V3.7: Add bookmark indicator
             bookmark_marker = "📌 " if feed.get('is_bookmarked', 0) else ""
             display = f"{bookmark_marker}{feed['title']}"
@@ -2003,6 +2005,25 @@ Made with 🧠 for better content consumption"""
         """Handle window close event."""
         if self.auto_refresh_job:
             self.root.after_cancel(self.auto_refresh_job)
+
+        # Give in-flight podcast downloads a short window to finish so their
+        # files/DB rows aren't truncated (daemon threads are killed at exit).
+        if self.podcast_downloader:
+            active = self.podcast_downloader.get_active_downloads()
+            if active:
+                self.logger.info(f"Waiting for {len(active)} active download(s) to finish...")
+                self._set_status(f"Finishing {len(active)} download(s)...")
+                self.root.update_idletasks()
+                for thread in list(self.podcast_downloader.active_downloads.values()):
+                    thread.join(timeout=5.0)
+
+        # Stop audio playback and its monitor/poller cleanly.
+        if self.audio_player:
+            try:
+                self.audio_player.cleanup()
+            except Exception as e:
+                self.logger.warning(f"Audio cleanup error: {e}")
+
         self.db.close()
         self.root.destroy()
 

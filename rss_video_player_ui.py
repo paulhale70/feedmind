@@ -88,6 +88,14 @@ class VideoPlayerWidget(ttk.Frame):
             self._reset()
             return
 
+        # A downloaded enclosure could carry an attacker-chosen name/extension;
+        # _open_file would hand it to os.startfile/xdg-open, which launches
+        # whatever handler matches the extension. Only accept real video files.
+        if not is_video_file(file_path):
+            logger.warning(f"Refusing to load non-video file: {file_path}")
+            self._reset()
+            return
+
         self.current_video = file_path
         self.current_title = video_title or os.path.basename(file_path)
 
@@ -110,7 +118,8 @@ class VideoPlayerWidget(ttk.Frame):
 
     def _play_video(self):
         """Open video in system's default video player."""
-        if not self.current_video:
+        # Re-check the extension at launch time as a defense in depth.
+        if not self.current_video or not is_video_file(self.current_video):
             return
 
         try:

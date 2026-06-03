@@ -42,6 +42,9 @@ class NotificationManager:
 
         try:
             article_word = "article" if count == 1 else "articles"
+            # Feed titles are untrusted and length-unbounded; cap to keep the
+            # toast backend happy.
+            feed_title = (feed_title or "")[:80]
             notification.notify(
                 title=f"{self.app_name} - New Articles",
                 message=f"{count} new {article_word} from {feed_title}",

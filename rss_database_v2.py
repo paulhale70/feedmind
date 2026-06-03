@@ -359,6 +359,19 @@ class RSSDatabase:
             """, (limit,))
         return [dict(row) for row in cursor.fetchall()]
 
+    def get_all_unread_counts(self) -> dict:
+        """Return {feed_url: unread_count} for every feed in a single query.
+
+        Avoids the N-queries pattern of calling get_unread_count() per feed.
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT feed_url, COUNT(*) FROM articles
+            WHERE is_read = 0
+            GROUP BY feed_url
+        """)
+        return {row[0]: row[1] for row in cursor.fetchall()}
+
     def get_unread_count(self, feed_url: Optional[str] = None) -> int:
         """Get count of unread articles."""
         cursor = self.conn.cursor()

@@ -146,9 +146,9 @@ class PDFExporter:
                     story.append(Paragraph(f'<link href="{safe_href}">{safe_text}</link>', link_style))
 
                 # Description/content
-                description = PDFExporter._clean_html(article.get('description', 'No description available'))
-                if len(description) > 1000:
-                    description = description[:1000] + "..."
+                description = PDFExporter._clean_html(
+                    article.get('description', 'No description available'),
+                    max_length=1000)
                 story.append(Paragraph(description, body_style))
 
                 # Add separator between articles (but not after the last one)
@@ -227,34 +227,34 @@ class PDFExporter:
             return False
 
     @staticmethod
-    def _clean_html(text: str) -> str:
-        """Clean HTML tags from text for PDF rendering."""
+    def _clean_html(text: str, max_length: Optional[int] = None) -> str:
+        """Strip HTML to plain text and escape it for reportlab's mini-markup.
+
+        reportlab Paragraph interprets a markup subset, so the result is
+        XML-escaped last: a stray & or < in feed content would otherwise break
+        or mis-render the PDF. Truncation (max_length) happens on the plain
+        text *before* escaping so it can't split an entity like &amp;.
+        """
         if not text:
             return ""
 
-        # Basic HTML entity decoding
-        text = text.replace('&amp;', '&')
-        text = text.replace('&lt;', '<')
-        text = text.replace('&gt;', '>')
-        text = text.replace('&quot;', '"')
-        text = text.replace('&#39;', "'")
-        text = text.replace('&nbsp;', ' ')
-
-        # Remove common HTML tags while preserving text
         import re
-        # Remove script and style elements
+        import html as _html
+        # Remove script/style/comments, then all remaining tags.
         text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.DOTALL | re.IGNORECASE)
         text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL | re.IGNORECASE)
-        # Remove HTML comments
         text = re.sub(r'<!--.*?-->', '', text, flags=re.DOTALL)
-        # Remove all remaining tags
         text = re.sub(r'<[^>]+>', '', text)
 
-        # Clean up whitespace
-        text = re.sub(r'\s+', ' ', text)
-        text = text.strip()
+        # Decode entities to plain text and collapse whitespace.
+        text = _html.unescape(text)
+        text = re.sub(r'\s+', ' ', text).strip()
 
-        return text
+        if max_length and len(text) > max_length:
+            text = text[:max_length] + "..."
+
+        # Escape so the plain text is safe inside reportlab markup.
+        return escape(text)
 
 
 def check_dependencies():

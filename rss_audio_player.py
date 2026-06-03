@@ -365,7 +365,11 @@ class AudioPlayer:
                 if _BACKEND == 'pygame':
                     ms = pygame.mixer.music.get_pos()
                     if ms >= 0:
-                        return self.position + (ms / 1000.0)
+                        # get_pos() counts from the play() call (and keeps
+                        # ticking through pauses), so clamp to duration to avoid
+                        # reporting a position past the end of the track.
+                        pos = self.position + (ms / 1000.0)
+                        return min(pos, self.duration) if self.duration > 0 else pos
                 elif _BACKEND == 'mci' and self._mci:
                     return self._mci.get_position_ms() / 1000.0
             except Exception:

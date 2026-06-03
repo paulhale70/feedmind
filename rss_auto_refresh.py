@@ -38,7 +38,11 @@ class AutoRefreshScheduler:
 
         Args:
             refresh_callback: Function to call when a feed needs refresh.
-                             Takes feed_url as parameter.
+                             Takes feed_url as parameter. NOTE: this is invoked
+                             from the scheduler's background worker thread, so a
+                             GUI caller must marshal any UI work back to the main
+                             thread (e.g. Tk's root.after) rather than touching
+                             widgets directly.
             get_feeds_callback: Function returning a list of feed dicts with
                              keys 'url', 'refresh_interval_minutes' (optional),
                              and 'last_refresh' (optional ISO datetime). Without
