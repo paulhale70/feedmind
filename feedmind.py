@@ -323,6 +323,12 @@ class FeedMind:
 
     def _create_ui(self):
         """Create the main user interface."""
+        # Full-width status bar pinned to the bottom of the window. Packed first
+        # (side=BOTTOM) so it spans the whole window beneath both panes.
+        self.status_label = tk.Label(self.root, text="Ready", anchor=tk.W,
+                                     relief=tk.SUNKEN, bd=1, padx=6)
+        self.status_label.pack(side=tk.BOTTOM, fill=tk.X)
+
         # Main container with two panes
         self.paned_window = tk.PanedWindow(self.root, orient=tk.HORIZONTAL, sashwidth=5)
         self.paned_window.pack(fill=tk.BOTH, expand=True)
@@ -367,18 +373,15 @@ class FeedMind:
         view_frame = tk.Frame(self.left_panel)
         view_frame.pack(fill=tk.X, padx=5, pady=5)
 
-        self.all_btn = tk.Button(view_frame, text="All (1)", command=lambda: self._change_view("all"))
+        # Counts and active-state are filled in by _update_filter_buttons().
+        self.all_btn = tk.Button(view_frame, text="All", command=lambda: self._change_view("all"))
         self.all_btn.pack(fill=tk.X, pady=1)
 
-        self.unread_btn = tk.Button(view_frame, text="Unread (2)", command=lambda: self._change_view("unread"))
+        self.unread_btn = tk.Button(view_frame, text="Unread", command=lambda: self._change_view("unread"))
         self.unread_btn.pack(fill=tk.X, pady=1)
 
-        self.favorites_btn = tk.Button(view_frame, text="Favorites (3)", command=lambda: self._change_view("favorites"))
+        self.favorites_btn = tk.Button(view_frame, text="Favorites", command=lambda: self._change_view("favorites"))
         self.favorites_btn.pack(fill=tk.X, pady=1)
-
-        # Unread counter
-        self.unread_label = tk.Label(self.left_panel, text="Unread: 0", font=("Arial", 12, "bold"))
-        self.unread_label.pack(pady=5)
 
         # Categories section
         tk.Label(self.left_panel, text="Categories:", font=("Arial", 10, "bold")).pack(anchor=tk.W, padx=5, pady=(10, 2))
@@ -425,10 +428,6 @@ class FeedMind:
 
         self.mark_all_btn = tk.Button(refresh_frame, text="Mark All Read", command=self._mark_all_read)
         self.mark_all_btn.pack(fill=tk.X, pady=1)
-
-        # Status label
-        self.status_label = tk.Label(self.left_panel, text="Ready", anchor=tk.W)
-        self.status_label.pack(side=tk.BOTTOM, fill=tk.X, padx=5, pady=5)
 
     def _create_right_panel(self):
         """Create right panel with article list and content."""
@@ -599,8 +598,8 @@ class FeedMind:
             self._apply_theme_to_widget(widget, theme)
 
         # Special styling
-        self.unread_label.configure(bg=theme.bg_secondary, fg=theme.accent)
         self.status_label.configure(bg=theme.bg_secondary, fg=theme.fg_secondary)
+        self._update_filter_buttons()  # re-apply active-filter colors for the theme
 
         # Article tree
         style = ttk.Style()
@@ -694,6 +693,14 @@ class FeedMind:
                 display += f" ({unread})"
             self.feed_listbox.insert(tk.END, display)
             self.feed_urls.append(feed['url'])
+
+        # Empty-state hint. feed_urls is intentionally left shorter than the
+        # listbox here; _on_feed_select bounds-checks the index so this
+        # placeholder row can't be selected as a feed.
+        if not self.feed_urls:
+            hint = ("No feeds in this category" if self.current_category_id is not None
+                    else "No feeds yet — add one above")
+            self.feed_listbox.insert(tk.END, hint)
 
         # V3.7: Restore selection after reload
         if selected_url and selected_url in self.feed_urls:
@@ -792,15 +799,44 @@ class FeedMind:
         # Configure tags for styling
         self.article_tree.tag_configure('unread', font=("Arial", 10, "bold"))
         self.article_tree.tag_configure('read', foreground=self.current_theme.fg_secondary)
+        self.article_tree.tag_configure('placeholder', foreground=self.current_theme.fg_secondary)
 
-        # Update unread counter
-        total_unread = sum(self.db.get_unread_count(f['url']) for f in self.db.get_feeds())
-        self.unread_label.config(text=f"Unread: {total_unread}")
+        # Empty-state guidance when there's nothing to show
+        if not articles:
+            if not self.db.get_feeds():
+                msg = "No feeds yet — paste an RSS URL on the left and click Add Feed."
+            else:
+                msg = "No articles to show. Try Refresh, or change the filter above."
+            self.article_tree.insert("", tk.END, text="", values=("", msg, ""),
+                                     tags=('placeholder',))
+            self._set_detail_text("Select an article to read its details here.")
 
-        # Update view button states
-        self.all_btn.config(relief=tk.SUNKEN if self.current_view == "all" else tk.RAISED)
-        self.unread_btn.config(relief=tk.SUNKEN if self.current_view == "unread" else tk.RAISED)
-        self.favorites_btn.config(relief=tk.SUNKEN if self.current_view == "favorites" else tk.RAISED)
+        # Update filter-button counts and active-state highlight
+        self._update_filter_buttons()
+
+    def _update_filter_buttons(self):
+        """Refresh the All/Unread/Favorites buttons with live counts and
+        highlight the active filter (relief alone is invisible under the flat
+        themed buttons, so we also swap the background colour)."""
+        if not hasattr(self, 'all_btn'):
+            return
+        # Derive all three counts from a single fetch instead of three scans.
+        all_articles = self.db.get_cached_articles()
+        total = len(all_articles)
+        unread = sum(1 for a in all_articles if not a['is_read'])
+        favorites = sum(1 for a in all_articles if a['is_favorite'])
+
+        self.all_btn.config(text=f"All ({total})")
+        self.unread_btn.config(text=f"Unread ({unread})")
+        self.favorites_btn.config(text=f"Favorites ({favorites})")
+
+        theme = self.current_theme
+        for view, btn in (("all", self.all_btn), ("unread", self.unread_btn),
+                          ("favorites", self.favorites_btn)):
+            if view == self.current_view:
+                btn.config(relief=tk.SUNKEN, bg=theme.button_active, fg=theme.button_fg)
+            else:
+                btn.config(relief=tk.RAISED, bg=theme.button_bg, fg=theme.button_fg)
 
     def _add_feed(self):
         """Add a new feed."""
@@ -1059,6 +1095,10 @@ class FeedMind:
         if not selection:
             return
 
+        # Ignore the empty-state placeholder row (index past the real feeds).
+        if selection[0] >= len(self.feed_urls):
+            return
+
         url = self.feed_urls[selection[0]]
         self.current_feed_url = url
         self._update_view()
@@ -1071,7 +1111,8 @@ class FeedMind:
 
         item = selection[0]
         tags = self.article_tree.item(item, 'tags')
-        if not tags:
+        if not tags or not tags[0].isdigit():
+            # Empty-state placeholder row — nothing to show.
             return
 
         article_id = int(tags[0])
@@ -1652,6 +1693,13 @@ class FeedMind:
     def _set_status(self, message: str):
         """Update status label."""
         self.status_label.config(text=message)
+
+    def _set_detail_text(self, content: str):
+        """Replace the (read-only) article-details pane with the given text."""
+        self.detail_text.config(state=tk.NORMAL)
+        self.detail_text.delete('1.0', tk.END)
+        self.detail_text.insert('1.0', content)
+        self.detail_text.config(state=tk.DISABLED)
 
     # V3.5 AI Features
 
