@@ -1,0 +1,10 @@
+[tool.pytest.ini_options]
+# Only the deterministic unit suite is collected by default. The scripts under
+# tests/ (test_*.py) are interactive/live-network smoke tools, not CI tests.
+testpaths = ["tests/unit"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-q"
+markers = [
+    "gui: test requires a Tk display (skipped automatically if unavailable)",
+]
