@@ -7,6 +7,15 @@ This will help identify why new episodes aren't appearing.
 import sys
 import sqlite3
 from datetime import datetime
+# --- bootstrap: make repo-root modules importable and emoji output safe ---
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+if hasattr(_sys.stdout, "reconfigure"):
+    try:
+        _sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except (ValueError, OSError):
+        pass
+# --- end bootstrap ---
 from rss_core import RSSFetcher
 from rss_database_v3 import RSSDatabase
 

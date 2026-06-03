@@ -5,6 +5,7 @@ Enhanced with categories, statistics, and per-feed settings.
 
 import logging
 import sqlite3
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
@@ -18,14 +19,41 @@ class RSSDatabase:
 
     def __init__(self, db_path: str = "rss_reader_v2.db"):
         self.db_path = Path(db_path)
-        self.conn: Optional[sqlite3.Connection] = None
+        # Each thread gets its own SQLite connection. A single shared connection
+        # is not safe to use concurrently: cursors and commits from the Tk main
+        # thread and the background refresh/download threads interleave, raising
+        # "recursive use of cursors" or corrupting data. Per-thread connections
+        # let SQLite's own file locking serialize writes instead.
+        self._local = threading.local()
+        self._connections = []
+        self._connections_lock = threading.Lock()
         self._init_database()
+
+    def _create_connection(self) -> sqlite3.Connection:
+        """Create and configure a new SQLite connection for the current thread."""
+        conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        # WAL allows concurrent readers alongside a single writer; busy_timeout
+        # makes a writer wait for the lock instead of failing with "database is
+        # locked" when another thread is mid-write.
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+        conn.execute("PRAGMA foreign_keys=ON")
+        return conn
+
+    @property
+    def conn(self) -> sqlite3.Connection:
+        """Return this thread's connection, creating it lazily on first use."""
+        conn = getattr(self._local, "conn", None)
+        if conn is None:
+            conn = self._create_connection()
+            self._local.conn = conn
+            with self._connections_lock:
+                self._connections.append(conn)
+        return conn
 
     def _init_database(self):
         """Initialize the database and create tables if they don't exist."""
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row
-
         cursor = self.conn.cursor()
 
         # Create categories table
@@ -331,6 +359,19 @@ class RSSDatabase:
             """, (limit,))
         return [dict(row) for row in cursor.fetchall()]
 
+    def get_all_unread_counts(self) -> dict:
+        """Return {feed_url: unread_count} for every feed in a single query.
+
+        Avoids the N-queries pattern of calling get_unread_count() per feed.
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT feed_url, COUNT(*) FROM articles
+            WHERE is_read = 0
+            GROUP BY feed_url
+        """)
+        return {row[0]: row[1] for row in cursor.fetchall()}
+
     def get_unread_count(self, feed_url: Optional[str] = None) -> int:
         """Get count of unread articles."""
         cursor = self.conn.cursor()
@@ -528,7 +569,13 @@ class RSSDatabase:
         self.delete_category(category_id)
 
     def close(self):
-        """Close the database connection."""
-        if self.conn:
-            self.conn.close()
-            logger.info("Database connection closed")
+        """Close all open database connections (one per thread)."""
+        with self._connections_lock:
+            for conn in self._connections:
+                try:
+                    conn.close()
+                except Exception as e:
+                    logger.warning(f"Error closing DB connection: {e}")
+            self._connections.clear()
+        self._local = threading.local()
+        logger.info("Database connections closed")

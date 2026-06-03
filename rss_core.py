@@ -4,8 +4,10 @@ Handles fetching and parsing RSS feeds from URLs using built-in XML parser.
 """
 
 import html
+import ipaddress
 import logging
 import re
+import socket
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from typing import Optional
@@ -23,12 +25,23 @@ logger = logging.getLogger(__name__)
 # --- SSRF defense ------------------------------------------------------------
 # Allow only http(s); reject file://, ftp://, gopher://, data://, and any
 # protocol-handler trick. Re-validate every hop so a 302 redirect to file://
-# or to an internal address can't smuggle through.
+# or to an internal address can't smuggle through. On top of the scheme
+# allow-list, resolve the host and reject private/loopback/link-local/reserved
+# targets so a feed pointing at http://127.0.0.1/, http://169.254.169.254/
+# (cloud metadata), or an internal host can't be used as an SSRF pivot.
 _ALLOWED_SCHEMES = frozenset({"http", "https"})
 
 
 class UnsafeURLError(URLError):
     """Raised when a URL has a disallowed scheme or redirect target."""
+
+
+def _is_public_ip(ip: ipaddress._BaseAddress) -> bool:
+    """True only for ordinary public/global addresses."""
+    return not (
+        ip.is_private or ip.is_loopback or ip.is_link_local
+        or ip.is_reserved or ip.is_multicast or ip.is_unspecified
+    )
 
 
 def _validate_url(url: str) -> None:
@@ -38,8 +51,29 @@ def _validate_url(url: str) -> None:
             f"URL scheme '{parsed.scheme}' is not allowed; "
             f"only http/https are permitted (got: {url})"
         )
-    if not parsed.netloc:
+    hostname = parsed.hostname  # strips userinfo and port
+    if not hostname:
         raise UnsafeURLError(f"URL has no host: {url}")
+
+    # Resolve the host and ensure every address it maps to is public. Failing
+    # closed on resolution errors is fine — the request would fail anyway.
+    try:
+        addrinfo = socket.getaddrinfo(hostname, None, proto=socket.IPPROTO_TCP)
+    except socket.gaierror as e:
+        raise UnsafeURLError(f"Could not resolve host '{hostname}': {e}")
+
+    for *_, sockaddr in addrinfo:
+        try:
+            ip = ipaddress.ip_address(sockaddr[0])
+        except ValueError:
+            raise UnsafeURLError(
+                f"Host '{hostname}' resolved to an unparseable address: {sockaddr[0]}"
+            )
+        if not _is_public_ip(ip):
+            raise UnsafeURLError(
+                f"URL '{url}' resolves to non-public address {ip}; "
+                f"blocked to prevent SSRF"
+            )
 
 
 class _StrictRedirectHandler(HTTPRedirectHandler):
@@ -68,6 +102,23 @@ def safe_urlopen(url_or_request, timeout: float = 10):
         url = url_or_request
     _validate_url(url)
     return _safe_opener.open(url_or_request, timeout=timeout)
+
+
+# Cap full-body reads so a hostile or misconfigured server can't exhaust memory
+# by streaming an unbounded response. Callers that read whole pages/feeds should
+# use this instead of response.read().
+MAX_RESPONSE_BYTES = 10 * 1024 * 1024  # 10 MiB
+
+
+def read_capped(response, max_bytes: int = MAX_RESPONSE_BYTES) -> bytes:
+    """Read at most max_bytes from response, logging if the cap was hit."""
+    data = response.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        logger.warning(
+            "Response exceeded %d-byte cap; truncating.", max_bytes
+        )
+        data = data[:max_bytes]
+    return data
 # -----------------------------------------------------------------------------
 
 # Use defusedxml when available to block XXE / billion-laughs on remote feeds.
@@ -330,7 +381,7 @@ class RSSFetcher:
             # Fetch the XML content (scheme allow-list enforced)
             req = Request(url, headers={'User-Agent': 'Mozilla/5.0'})
             with safe_urlopen(req, timeout=self.timeout) as response:
-                xml_content = response.read()
+                xml_content = read_capped(response)
 
             # Detect feed type and parse accordingly
             try:

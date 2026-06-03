@@ -3,6 +3,7 @@ Audio Player UI Widget for RSS Reader V3
 Provides playback controls for podcast episodes.
 """
 
+import queue
 import tkinter as tk
 from tkinter import ttk, messagebox
 from typing import Optional, Callable
@@ -25,12 +26,24 @@ class AudioPlayerWidget(tk.Frame):
         self.current_episode_title = ""
         self.update_job = None
 
+        # The player's monitor thread delivers position updates off the Tk main
+        # thread. Tkinter is not thread-safe, so the callback only pushes values
+        # onto this queue and a main-thread poller applies them to the widgets.
+        self._update_queue = queue.Queue()
+        self._poll_job = None
+        # True while the user is dragging the seek bar, so the position poller
+        # doesn't yank the handle back under their cursor.
+        self._user_seeking = False
+
         self._create_ui()
         self._update_controls()
 
         # Set up player callback
         if self.player.is_available():
             self.player.set_update_callback(self._on_player_update)
+
+        # Start draining position updates on the main thread.
+        self._poll_updates()
 
     def _create_ui(self):
         """Create the UI components."""
@@ -60,6 +73,9 @@ class AudioPlayerWidget(tk.Frame):
             command=self._on_seek
         )
         self.progress_bar.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        # Seek on release rather than continuously while dragging.
+        self.progress_bar.bind('<Button-1>', self._on_seek_start)
+        self.progress_bar.bind('<ButtonRelease-1>', self._on_seek_end)
 
         self.duration_label = tk.Label(progress_frame, text="0:00", width=6, anchor=tk.W)
         self.duration_label.pack(side=tk.LEFT, padx=(5, 0))
@@ -173,12 +189,28 @@ class AudioPlayerWidget(tk.Frame):
             self._update_controls()
 
     def _on_seek(self, value):
-        """Handle seek bar movement."""
-        if not self.player.is_available() or not self.player.current_file:
-            return
+        """Scale 'command' callback. Fires continuously while dragging and on
+        programmatic .set() updates, so the actual seek is deferred to
+        _on_seek_end (mouse release) to avoid stop/play thrashing."""
+        pass
 
-        # Only seek when user releases (to avoid constant seeking)
-        # For now, we'll skip seeking as pygame doesn't handle it well
+    def _on_seek_start(self, event):
+        """Mark the start of a user drag on the seek bar."""
+        if self.player.is_available() and self.player.current_file:
+            self._user_seeking = True
+
+    def _on_seek_end(self, event):
+        """Seek to the released position."""
+        if not self._user_seeking:
+            return
+        self._user_seeking = False
+        if not (self.player.is_available() and self.player.current_file):
+            return
+        duration = self.player.get_duration()
+        if duration > 0:
+            target = (self.progress_var.get() / 100.0) * duration
+            self.player.seek(target)
+            self.time_label.config(text=self._format_time(target))
 
     def _on_speed_change(self, event):
         """Handle speed change."""
@@ -203,7 +235,43 @@ class AudioPlayerWidget(tk.Frame):
         self.volume_label.config(text=f"{int(float(value))}%")
 
     def _on_player_update(self, position: float, duration: float):
-        """Callback from player with position update."""
+        """Position callback invoked from the player's monitor thread.
+
+        Runs OFF the Tk main thread. Tkinter is not thread-safe (and calling
+        after() from a non-main thread is itself unreliable), so we only push
+        the values onto a thread-safe queue here; the main-thread poller
+        (_poll_updates) applies them to the widgets.
+        """
+        self._update_queue.put((position, duration))
+
+    def _poll_updates(self):
+        """Drain queued position updates and apply the most recent one.
+
+        Runs on the Tk main thread (scheduled via after), so touching widgets
+        here is safe. Reschedules itself until the widget is destroyed.
+        """
+        latest = None
+        try:
+            while True:
+                latest = self._update_queue.get_nowait()
+        except queue.Empty:
+            pass
+
+        if latest is not None:
+            self._apply_player_update(*latest)
+
+        try:
+            self._poll_job = self.after(200, self._poll_updates)
+        except tk.TclError:
+            # Widget destroyed — stop the loop.
+            self._poll_job = None
+
+    def _apply_player_update(self, position: float, duration: float):
+        """Apply a position update to the widgets (runs on the Tk main thread)."""
+        # Don't move the handle while the user is dragging it.
+        if self._user_seeking:
+            return
+
         # Update progress bar
         if duration > 0:
             progress = (position / duration) * 100
@@ -245,6 +313,9 @@ class AudioPlayerWidget(tk.Frame):
 
     def cleanup(self):
         """Clean up resources."""
+        if self._poll_job:
+            self.after_cancel(self._poll_job)
+            self._poll_job = None
         if self.update_job:
             self.after_cancel(self.update_job)
         if self.player:

@@ -120,12 +120,19 @@ class OPMLHandler:
             if body is None:
                 raise ValueError("OPML file has no body element")
 
-            def process_outline(outline, parent_category=None):
+            MAX_OPML_DEPTH = 50  # guard against pathologically nested OPML
+
+            def process_outline(outline, parent_category=None, depth=0):
                 """Recursively process outline elements."""
+                if depth > MAX_OPML_DEPTH:
+                    logger.warning("OPML nesting exceeds %d levels; "
+                                   "skipping deeper outlines", MAX_OPML_DEPTH)
+                    return
                 # Get attributes (case-insensitive)
                 attrs = {k.lower(): v for k, v in outline.attrib.items()}
 
-                xml_url = attrs.get('xmlurl') or attrs.get('xmlurl')
+                # attrs keys are already lower-cased above, so 'xmlUrl' -> 'xmlurl'.
+                xml_url = attrs.get('xmlurl')
                 outline_type = attrs.get('type', '').lower()
                 title = attrs.get('title') or attrs.get('text', '')
 
@@ -156,7 +163,7 @@ class OPMLHandler:
 
                         # Process children with this category
                         for child in children:
-                            process_outline(child, category_name)
+                            process_outline(child, category_name, depth + 1)
 
             # Process all top-level outlines
             for outline in body.findall('outline'):

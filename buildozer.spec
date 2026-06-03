@@ -13,7 +13,9 @@ package.domain = org.feedmind
 source.dir = .
 
 # (list) Source files to include (let empty to include all the files)
-source.include_exts = py,png,jpg,kv,atlas,ttf,db,txt
+# Note: 'db' deliberately excluded so a local feedmind.db (which may contain
+# cached content or fallback-stored API keys) is never bundled into the APK.
+source.include_exts = py,png,jpg,kv,atlas,ttf,txt
 
 # (list) List of inclusions using pattern matching
 source.include_patterns = mobile/*,mobile/screens/*,mobile/widgets/*,mobile/audio/*,mobile/utils/*,mobile/kv/*
@@ -25,7 +27,7 @@ source.include_patterns = mobile/*,mobile/screens/*,mobile/widgets/*,mobile/audi
 source.exclude_dirs = tests, bin, .git, __pycache__, docs
 
 # (str) Application versioning (method 1)
-version = 1.0.0
+version = 3.7.0
 
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
