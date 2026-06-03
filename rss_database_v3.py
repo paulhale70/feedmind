@@ -4,9 +4,7 @@ Extends V2 with podcast episode support and auto-refresh scheduling.
 """
 
 import logging
-import sqlite3
 from datetime import datetime
-from pathlib import Path
 from typing import Optional, List, Dict
 from rss_database_v2 import RSSDatabase as RSSDatabase_V2
 
@@ -19,15 +17,15 @@ class RSSDatabase(RSSDatabase_V2):
 
     def __init__(self, db_path: str = "rss_reader_v3.db"):
         """Initialize V3 database with podcast support."""
-        # Initialize parent class first
-        self.db_path = Path(db_path)
-        self.conn: Optional[sqlite3.Connection] = None
-        self._init_database_v3()
+        # V2's __init__ sets up the thread-local connection machinery and then
+        # calls self._init_database(), which our override below extends with the
+        # V3 tables. (The previous code connected twice — once here and again in
+        # super().__init__() — leaking the first connection.)
+        super().__init__(db_path)
 
-    def _init_database_v3(self):
-        """Initialize V3 database with podcast tables."""
-        # Call parent initialization
-        super().__init__(str(self.db_path))
+    def _init_database(self):
+        """Create the V2 schema, then add V3 podcast/scheduling tables."""
+        super()._init_database()
 
         cursor = self.conn.cursor()
 
@@ -95,18 +93,28 @@ class RSSDatabase(RSSDatabase_V2):
         if 'is_bookmarked' not in feed_columns:
             cursor.execute("ALTER TABLE feeds ADD COLUMN is_bookmarked INTEGER DEFAULT 0")
 
-        # V3.7.1: Fix podcast episodes with duplicate links
-        # Delete podcast episodes where the link doesn't match the audio_url
-        # These will be re-fetched on next refresh with correct unique links
-        cursor.execute("""
-            DELETE FROM articles
-            WHERE audio_url IS NOT NULL
-              AND audio_url != ''
-              AND link != audio_url
-        """)
-        deleted_count = cursor.rowcount
-        if deleted_count > 0:
-            logger.info(f"Removed {deleted_count} duplicate podcast episodes. Use 'Refresh All' to restore them with unique links.")
+        # V3.7.1: One-time cleanup of podcast episodes whose link doesn't match
+        # their audio_url (a duplicate-link bug fixed in v3.7.1). They get
+        # re-fetched on the next refresh with correct unique links.
+        #
+        # This DELETE is destructive, so it is gated behind PRAGMA user_version
+        # and runs exactly once. Previously it ran on every startup, which could
+        # wipe legitimately-stored rows whose link differs from audio_url.
+        cursor.execute("PRAGMA user_version")
+        schema_version = cursor.fetchone()[0]
+        if schema_version < 1:
+            cursor.execute("""
+                DELETE FROM articles
+                WHERE audio_url IS NOT NULL
+                  AND audio_url != ''
+                  AND link != audio_url
+            """)
+            deleted_count = cursor.rowcount
+            if deleted_count > 0:
+                logger.info(f"Removed {deleted_count} duplicate podcast episodes. Use 'Refresh All' to restore them with unique links.")
+            # user_version only accepts a literal, not a bound parameter; the
+            # value here is a hard-coded int, so this is safe.
+            cursor.execute("PRAGMA user_version = 1")
 
     # Podcast Episode Methods
 
@@ -298,6 +306,7 @@ class RSSDatabase(RSSDatabase_V2):
         """Cache articles with podcast audio enclosure support."""
         cursor = self.conn.cursor()
         cached_count = 0
+        failed_count = 0
         has_audio = False
 
         for article in articles:
@@ -351,9 +360,24 @@ class RSSDatabase(RSSDatabase_V2):
                     cached_count += 1
 
             except Exception as e:
+                failed_count += 1
                 logger.error(f"Failed to cache article: {e}")
 
         self.conn.commit()
+
+        if failed_count:
+            logger.warning(
+                f"cache_articles: {failed_count}/{len(articles)} articles failed "
+                f"to cache for {feed_url}"
+            )
+            # Every article failing means a systemic problem (schema mismatch,
+            # disk full, locked DB) rather than normal deduplication, where
+            # cached_count is legitimately 0. Surface it so the caller reports an
+            # error instead of a silent "refresh succeeded".
+            if cached_count == 0 and failed_count == len(articles):
+                raise RuntimeError(
+                    f"All {failed_count} articles failed to cache for {feed_url}"
+                )
 
         # Auto-mark feed as podcast if it has audio
         if has_audio:
