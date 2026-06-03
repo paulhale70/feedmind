@@ -1121,16 +1121,16 @@ class FeedMind:
         self.selected_article_id = article_id
 
         # Get article details (including podcast info)
-        cursor = self.db.conn.cursor()
-        cursor.execute("""
-            SELECT title, description, link, published, is_read, is_favorite,
-                   audio_url, duration_seconds
-            FROM articles WHERE id = ?
-        """, (article_id,))
-
-        row = cursor.fetchone()
-        if row:
-            title, desc, link, date, is_read, is_fav, audio_url, duration = row
+        article = self.db.get_article(article_id)
+        if article:
+            title = article['title']
+            desc = article['description']
+            link = article['link']
+            date = article['published']
+            is_read = article['is_read']
+            is_fav = article['is_favorite']
+            audio_url = article['audio_url']
+            duration = article['duration_seconds']
 
             # Update detail view
             self.detail_text.config(state=tk.NORMAL)
@@ -1193,12 +1193,9 @@ class FeedMind:
         if not self.selected_article_id:
             return
 
-        cursor = self.db.conn.cursor()
-        cursor.execute("SELECT link FROM articles WHERE id = ?", (self.selected_article_id,))
-        row = cursor.fetchone()
-
-        if row:
-            link = row[0] or ""
+        article = self.db.get_article(self.selected_article_id)
+        if article:
+            link = article['link'] or ""
             # Feed-supplied links are untrusted; only hand http(s) URLs to the
             # browser so a malicious feed can't trigger file://, javascript:, or
             # other scheme handlers.
@@ -1217,12 +1214,9 @@ class FeedMind:
         if not self.selected_article_id:
             return
 
-        cursor = self.db.conn.cursor()
-        cursor.execute("SELECT is_read FROM articles WHERE id = ?", (self.selected_article_id,))
-        row = cursor.fetchone()
-
-        if row:
-            new_status = not row[0]
+        article = self.db.get_article(self.selected_article_id)
+        if article:
+            new_status = not article['is_read']
             self.db.mark_as_read(self.selected_article_id, new_status)
             self._update_view()
             self._on_article_select(None)  # Refresh detail view
@@ -1232,12 +1226,9 @@ class FeedMind:
         if not self.selected_article_id:
             return
 
-        cursor = self.db.conn.cursor()
-        cursor.execute("SELECT is_favorite FROM articles WHERE id = ?", (self.selected_article_id,))
-        row = cursor.fetchone()
-
-        if row:
-            new_status = not row[0]
+        article = self.db.get_article(self.selected_article_id)
+        if article:
+            new_status = not article['is_favorite']
             self.db.mark_as_favorite(self.selected_article_id, new_status)
             self._update_view()
             self._on_article_select(None)  # Refresh detail view
@@ -1270,17 +1261,12 @@ class FeedMind:
             return
 
         # Get article with audio URL
-        cursor = self.db.conn.cursor()
-        cursor.execute("""
-            SELECT audio_url, title FROM articles WHERE id = ?
-        """, (self.selected_article_id,))
-
-        row = cursor.fetchone()
-        if not row or not row[0]:
+        article = self.db.get_article(self.selected_article_id)
+        if not article or not article['audio_url']:
             messagebox.showwarning("No Podcast", "This article is not a podcast episode")
             return
 
-        audio_url, title = row
+        audio_url, title = article['audio_url'], article['title']
 
         # Check if already downloaded
         existing_path = self.db.get_download_path(self.selected_article_id)
@@ -1729,14 +1715,11 @@ class FeedMind:
             return
 
         # Get article
-        cursor = self.db.conn.cursor()
-        cursor.execute("SELECT title, link, full_text FROM articles WHERE id = ?", (self.selected_article_id,))
-        row = cursor.fetchone()
-
-        if not row:
+        article = self.db.get_article(self.selected_article_id)
+        if not article:
             return
 
-        title, link, existing_full_text = row[0], row[1], row[2]
+        title, link, existing_full_text = article['title'], article['link'], article['full_text']
 
         if existing_full_text:
             messagebox.showinfo("Already Extracted", f"Full text already extracted for:\n{title}\n\n{len(existing_full_text)} characters")
@@ -1788,14 +1771,13 @@ class FeedMind:
             return
 
         # Get article text
-        cursor = self.db.conn.cursor()
-        cursor.execute("SELECT title, description, full_text, ai_summary FROM articles WHERE id = ?", (self.selected_article_id,))
-        row = cursor.fetchone()
-
-        if not row:
+        article = self.db.get_article(self.selected_article_id)
+        if not article:
             return
 
-        title, description, full_text, existing_summary = row
+        title, description, full_text, existing_summary = (
+            article['title'], article['description'],
+            article['full_text'], article['ai_summary'])
 
         if existing_summary:
             summary_data = self.db.get_ai_summary(self.selected_article_id)
@@ -1865,9 +1847,8 @@ class FeedMind:
         # Check for existing summary
         summary_data = self.db.get_ai_summary(self.selected_article_id)
         if summary_data and summary_data['tldr']:
-            cursor = self.db.conn.cursor()
-            cursor.execute("SELECT title FROM articles WHERE id = ?", (self.selected_article_id,))
-            title = cursor.fetchone()[0]
+            article = self.db.get_article(self.selected_article_id)
+            title = article['title'] if article else ""
             messagebox.showinfo("TL;DR", f"{title}\n\n{summary_data['tldr']}")
             return
 

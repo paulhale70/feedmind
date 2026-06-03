@@ -301,6 +301,16 @@ class RSSDatabase(RSSDatabase_V2):
         """)
         return [dict(row) for row in cursor.fetchall()]
 
+    def get_article(self, article_id: int) -> Optional[Dict]:
+        """Return a single article (all columns) as a dict, or None if absent.
+
+        Gives the UI a typed accessor instead of reaching into conn.cursor().
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT * FROM articles WHERE id = ?", (article_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
     # Override cache_articles to handle audio enclosures
     def cache_articles(self, articles, feed_url: str):
         """Cache articles with podcast audio enclosure support."""
