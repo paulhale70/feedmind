@@ -54,7 +54,7 @@ BBC News: http://feeds.bbci.co.uk/news/rss.xml
 
 ---
 
-## 📦 FeedMind v3.7 - Complete Feature Set
+## 📦 FeedMind v3.8 - Complete Feature Set
 
 **Main Application:** `feedmind.py` (All features in one file!)
 

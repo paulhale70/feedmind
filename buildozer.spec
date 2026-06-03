@@ -27,7 +27,7 @@ source.include_patterns = mobile/*,mobile/screens/*,mobile/widgets/*,mobile/audi
 source.exclude_dirs = tests, bin, .git, __pycache__, docs
 
 # (str) Application versioning (method 1)
-version = 3.7.0
+version = 3.8.0
 
 # (list) Application requirements
 # comma separated e.g. requirements = sqlite3,kivy
