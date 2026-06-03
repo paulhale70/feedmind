@@ -125,7 +125,8 @@ class OPMLHandler:
                 # Get attributes (case-insensitive)
                 attrs = {k.lower(): v for k, v in outline.attrib.items()}
 
-                xml_url = attrs.get('xmlurl') or attrs.get('xmlurl')
+                # attrs keys are already lower-cased above, so 'xmlUrl' -> 'xmlurl'.
+                xml_url = attrs.get('xmlurl')
                 outline_type = attrs.get('type', '').lower()
                 title = attrs.get('title') or attrs.get('text', '')
 

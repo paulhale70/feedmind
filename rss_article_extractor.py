@@ -8,7 +8,7 @@ from typing import Optional, Dict
 from urllib.request import Request
 from urllib.error import URLError, HTTPError
 
-from rss_core import safe_urlopen
+from rss_core import safe_urlopen, read_capped, _validate_url
 
 try:
     from newspaper import Article
@@ -118,6 +118,12 @@ class ArticleExtractor:
         try:
             logger.info(f"Extracting article with newspaper: {url}")
 
+            # newspaper3k fetches with its own HTTP client, bypassing
+            # safe_urlopen, so apply the SSRF scheme/host check on the URL here.
+            # (Redirects newspaper follows internally are not re-checked — the
+            # trafilatura path is fully guarded if that matters.)
+            _validate_url(url)
+
             # Download and parse article
             article = Article(url)
             article.download()
@@ -160,10 +166,10 @@ class ArticleExtractor:
         try:
             logger.info(f"Extracting article with trafilatura: {url}")
 
-            # Download page (scheme allow-list enforced)
+            # Download page (scheme allow-list + size cap enforced)
             req = Request(url, headers={'User-Agent': 'Mozilla/5.0'})
             with safe_urlopen(req, timeout=self.timeout) as response:
-                html = response.read()
+                html = read_capped(response)
 
             # Extract text
             text = trafilatura.extract(

@@ -5,7 +5,7 @@ Handles caching and storage of RSS feeds using SQLite.
 
 import logging
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -205,8 +205,10 @@ class RSSDatabase:
             days: Number of days to keep articles
         """
         cursor = self.conn.cursor()
+        # Use timedelta — subtracting `days` directly from .day raises ValueError
+        # for most days of the month (e.g. day 5 - 30 = -25).
         cutoff_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        cutoff_date = cutoff_date.replace(day=cutoff_date.day - days)
+        cutoff_date = cutoff_date - timedelta(days=days)
 
         cursor.execute("""
             DELETE FROM articles

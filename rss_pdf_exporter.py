@@ -6,6 +6,7 @@ Exports articles to PDF format using reportlab.
 import logging
 from datetime import datetime
 from typing import List, Dict, Optional
+from xml.sax.saxutils import escape
 
 try:
     from reportlab.lib.pagesizes import letter, A4
@@ -136,10 +137,13 @@ class PDFExporter:
                     pub_date = pub_date[:10]  # Just the date part
                 story.append(Paragraph(f"Published: {pub_date}", date_style))
 
-                # Link
+                # Link — escape so a feed link containing quotes or angle
+                # brackets can't break reportlab's mini-markup.
                 link = article.get('link', '')
                 if link:
-                    story.append(Paragraph(f'<link href="{link}">{link}</link>', link_style))
+                    safe_href = escape(link, {'"': '&quot;'})
+                    safe_text = escape(link)
+                    story.append(Paragraph(f'<link href="{safe_href}">{safe_text}</link>', link_style))
 
                 # Description/content
                 description = PDFExporter._clean_html(article.get('description', 'No description available'))

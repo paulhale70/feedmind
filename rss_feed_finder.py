@@ -13,7 +13,7 @@ from urllib.parse import urljoin, urlparse
 from urllib.request import Request
 from html.parser import HTMLParser
 
-from rss_core import safe_urlopen
+from rss_core import safe_urlopen, read_capped
 
 
 class FeedLinkParser(HTMLParser):
@@ -134,7 +134,7 @@ class RSSFeedFinder:
             req = Request(url, headers=headers)
 
             with safe_urlopen(req, timeout=self.timeout) as response:
-                html = response.read().decode('utf-8', errors='ignore')
+                html = read_capped(response).decode('utf-8', errors='ignore')
 
             # Parse for feed links
             parser = FeedLinkParser()
@@ -210,7 +210,7 @@ class RSSFeedFinder:
                 if any(marker in content.lower() for marker in ['<rss', '<feed', '<atom', '<?xml']):
                     return True
 
-        except:
+        except Exception:
             pass
 
         return False

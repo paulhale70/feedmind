@@ -8,6 +8,7 @@ import os
 import threading
 from pathlib import Path
 from typing import Optional, Callable
+from urllib.parse import urlparse, unquote
 from urllib.request import Request
 from urllib.error import URLError, HTTPError
 
@@ -20,15 +21,23 @@ logger = logging.getLogger(__name__)
 class PodcastDownloader:
     """Downloads podcast episodes with progress tracking."""
 
-    def __init__(self, download_dir: str = "podcast_downloads"):
+    # Hard cap on a single episode download. Generous enough for long video
+    # podcasts, but bounds disk usage if a feed advertises (or streams) a file
+    # of unbounded size.
+    DEFAULT_MAX_BYTES = 2 * 1024 * 1024 * 1024  # 2 GiB
+
+    def __init__(self, download_dir: str = "podcast_downloads",
+                 max_download_bytes: int = DEFAULT_MAX_BYTES):
         """
         Initialize podcast downloader.
 
         Args:
             download_dir: Directory to store downloaded episodes
+            max_download_bytes: Maximum size of a single download in bytes
         """
         self.download_dir = Path(download_dir)
         self.download_dir.mkdir(exist_ok=True)
+        self.max_download_bytes = max_download_bytes
         self.active_downloads = {}  # url -> thread
 
     def download(self, audio_url: str, filename: Optional[str] = None,
@@ -83,6 +92,15 @@ class PodcastDownloader:
             req = Request(audio_url, headers={'User-Agent': 'Mozilla/5.0'})
             with safe_urlopen(req, timeout=30) as response:
                 total_size = int(response.headers.get('Content-Length', 0))
+                max_bytes = self.max_download_bytes
+
+                # Reject up front if the server advertises an oversized file.
+                if total_size and total_size > max_bytes:
+                    raise ValueError(
+                        f"File too large: {total_size} bytes exceeds the "
+                        f"{max_bytes}-byte limit"
+                    )
+
                 downloaded = 0
                 chunk_size = 8192
 
@@ -93,8 +111,15 @@ class PodcastDownloader:
                         if not chunk:
                             break
 
-                        f.write(chunk)
                         downloaded += len(chunk)
+                        # Enforce the cap even when Content-Length is absent or
+                        # lies about the real (streamed) size.
+                        if downloaded > max_bytes:
+                            raise ValueError(
+                                f"Download exceeded the {max_bytes}-byte limit"
+                            )
+
+                        f.write(chunk)
 
                         # Call progress callback
                         if progress_callback:
@@ -116,6 +141,7 @@ class PodcastDownloader:
         except (URLError, HTTPError) as e:
             error_msg = f"Network error: {e}"
             logger.error(f"Download failed for {audio_url}: {error_msg}")
+            self._remove_partial(file_path)
             if completion_callback:
                 try:
                     completion_callback(False, None, error_msg)
@@ -125,6 +151,7 @@ class PodcastDownloader:
         except Exception as e:
             error_msg = f"Unexpected error: {e}"
             logger.error(f"Download failed for {audio_url}: {error_msg}")
+            self._remove_partial(file_path)
             if completion_callback:
                 try:
                     completion_callback(False, None, error_msg)
@@ -136,6 +163,14 @@ class PodcastDownloader:
             if audio_url in self.active_downloads:
                 del self.active_downloads[audio_url]
 
+    def _remove_partial(self, file_path: Path):
+        """Delete a partially-downloaded file after a failed download."""
+        try:
+            if file_path.exists():
+                file_path.unlink()
+        except OSError as e:
+            logger.warning(f"Could not remove partial file {file_path}: {e}")
+
     def _generate_filename(self, audio_url: str) -> str:
         """
         Generate a safe filename from URL.
@@ -146,13 +181,13 @@ class PodcastDownloader:
         Returns:
             Safe filename
         """
-        # Extract filename from URL
-        parts = audio_url.split('/')
-        filename = parts[-1] if parts else 'episode.mp3'
-
-        # Remove query parameters
-        if '?' in filename:
-            filename = filename.split('?')[0]
+        # Take only the URL path (drops query/fragment), decode %-escapes so an
+        # encoded separator like %2F can't smuggle a path in, then keep just the
+        # final path segment.
+        path = urlparse(audio_url).path
+        filename = os.path.basename(unquote(path)).strip()
+        if not filename:
+            filename = 'episode.mp3'
 
         # Ensure it has an extension
         if '.' not in filename:

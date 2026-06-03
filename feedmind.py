@@ -1155,7 +1155,15 @@ class FeedMind:
         row = cursor.fetchone()
 
         if row:
-            webbrowser.open(row[0])
+            link = row[0] or ""
+            # Feed-supplied links are untrusted; only hand http(s) URLs to the
+            # browser so a malicious feed can't trigger file://, javascript:, or
+            # other scheme handlers.
+            from urllib.parse import urlparse
+            if urlparse(link).scheme not in ("http", "https"):
+                self._set_status("Cannot open link: unsupported or missing URL")
+                return
+            webbrowser.open(link)
             # Auto-mark as read
             self.db.mark_as_read(self.selected_article_id, True)
             self._update_view()
@@ -1260,7 +1268,7 @@ class FeedMind:
                         audio = MutagenFile(file_path)
                         if audio and audio.info:
                             duration = int(audio.info.length)
-                    except:
+                    except Exception:
                         pass
 
                     # Store in database

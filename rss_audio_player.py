@@ -59,6 +59,14 @@ class _MCIPlayer:
     def load(self, file_path: str) -> bool:
         """Open an audio file via MCI."""
         self.close()
+        # MCI has no parameterized command API; the path is interpolated into a
+        # command string. A double-quote or control character in the path could
+        # close the quoted argument and inject further MCI commands. Such
+        # characters are invalid in Windows file paths anyway, so reject them.
+        if '"' in file_path or any(ord(c) < 0x20 for c in file_path):
+            logger.error("Refusing to load audio path with unsafe characters: %r", file_path)
+            return False
+        file_path = os.path.abspath(file_path)
         # mpegvideo type supports mp3, wav, wma, and more
         err, _ = self._send(f'open "{file_path}" type mpegvideo alias {self._alias}')
         if err:
@@ -360,7 +368,7 @@ class AudioPlayer:
                         return self.position + (ms / 1000.0)
                 elif _BACKEND == 'mci' and self._mci:
                     return self._mci.get_position_ms() / 1000.0
-            except:
+            except Exception:
                 pass
         return self.position
 
@@ -454,7 +462,7 @@ class AudioPlayer:
         if _BACKEND == 'pygame':
             try:
                 pygame.mixer.quit()
-            except:
+            except Exception:
                 pass
         elif _BACKEND == 'mci' and self._mci:
             self._mci.close()
