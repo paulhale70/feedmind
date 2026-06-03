@@ -3,6 +3,7 @@ Audio Player UI Widget for RSS Reader V3
 Provides playback controls for podcast episodes.
 """
 
+import queue
 import tkinter as tk
 from tkinter import ttk, messagebox
 from typing import Optional, Callable
@@ -25,12 +26,21 @@ class AudioPlayerWidget(tk.Frame):
         self.current_episode_title = ""
         self.update_job = None
 
+        # The player's monitor thread delivers position updates off the Tk main
+        # thread. Tkinter is not thread-safe, so the callback only pushes values
+        # onto this queue and a main-thread poller applies them to the widgets.
+        self._update_queue = queue.Queue()
+        self._poll_job = None
+
         self._create_ui()
         self._update_controls()
 
         # Set up player callback
         if self.player.is_available():
             self.player.set_update_callback(self._on_player_update)
+
+        # Start draining position updates on the main thread.
+        self._poll_updates()
 
     def _create_ui(self):
         """Create the UI components."""
@@ -203,7 +213,39 @@ class AudioPlayerWidget(tk.Frame):
         self.volume_label.config(text=f"{int(float(value))}%")
 
     def _on_player_update(self, position: float, duration: float):
-        """Callback from player with position update."""
+        """Position callback invoked from the player's monitor thread.
+
+        Runs OFF the Tk main thread. Tkinter is not thread-safe (and calling
+        after() from a non-main thread is itself unreliable), so we only push
+        the values onto a thread-safe queue here; the main-thread poller
+        (_poll_updates) applies them to the widgets.
+        """
+        self._update_queue.put((position, duration))
+
+    def _poll_updates(self):
+        """Drain queued position updates and apply the most recent one.
+
+        Runs on the Tk main thread (scheduled via after), so touching widgets
+        here is safe. Reschedules itself until the widget is destroyed.
+        """
+        latest = None
+        try:
+            while True:
+                latest = self._update_queue.get_nowait()
+        except queue.Empty:
+            pass
+
+        if latest is not None:
+            self._apply_player_update(*latest)
+
+        try:
+            self._poll_job = self.after(200, self._poll_updates)
+        except tk.TclError:
+            # Widget destroyed — stop the loop.
+            self._poll_job = None
+
+    def _apply_player_update(self, position: float, duration: float):
+        """Apply a position update to the widgets (runs on the Tk main thread)."""
         # Update progress bar
         if duration > 0:
             progress = (position / duration) * 100
@@ -245,6 +287,9 @@ class AudioPlayerWidget(tk.Frame):
 
     def cleanup(self):
         """Clean up resources."""
+        if self._poll_job:
+            self.after_cancel(self._poll_job)
+            self._poll_job = None
         if self.update_job:
             self.after_cancel(self.update_job)
         if self.player:
