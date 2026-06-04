@@ -346,8 +346,15 @@ class FeedMind:
 
     def _create_left_panel(self):
         """Create left sidebar with feeds and categories."""
-        # Add feed section
-        add_frame = tk.Frame(self.left_panel)
+        self._build_add_feed_section(self.left_panel)
+        self._build_filter_buttons(self.left_panel)
+        self._build_category_list(self.left_panel)
+        self._build_feed_list(self.left_panel)
+        self._build_refresh_controls(self.left_panel)
+
+    def _build_add_feed_section(self, parent):
+        """URL entry, feed discovery, and add/remove buttons."""
+        add_frame = tk.Frame(parent)
         add_frame.pack(fill=tk.X, padx=5, pady=5)
 
         tk.Label(add_frame, text="RSS Feed URL:").pack(anchor=tk.W)
@@ -369,11 +376,14 @@ class FeedMind:
         self.remove_btn = tk.Button(btn_frame, text="Remove", command=self._remove_feed, bg="#C62828", fg="white")
         self.remove_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(2, 0))
 
-        # View mode buttons
-        view_frame = tk.Frame(self.left_panel)
+    def _build_filter_buttons(self, parent):
+        """All / Unread / Favorites view-mode buttons.
+
+        Counts and active-state are filled in later by _update_filter_buttons().
+        """
+        view_frame = tk.Frame(parent)
         view_frame.pack(fill=tk.X, padx=5, pady=5)
 
-        # Counts and active-state are filled in by _update_filter_buttons().
         self.all_btn = tk.Button(view_frame, text="All", command=lambda: self._change_view("all"))
         self.all_btn.pack(fill=tk.X, pady=1)
 
@@ -383,10 +393,11 @@ class FeedMind:
         self.favorites_btn = tk.Button(view_frame, text="Favorites", command=lambda: self._change_view("favorites"))
         self.favorites_btn.pack(fill=tk.X, pady=1)
 
-        # Categories section
-        tk.Label(self.left_panel, text="Categories:", font=("Arial", 10, "bold")).pack(anchor=tk.W, padx=5, pady=(10, 2))
+    def _build_category_list(self, parent):
+        """Categories label, listbox, and scrollbar."""
+        tk.Label(parent, text="Categories:", font=("Arial", 10, "bold")).pack(anchor=tk.W, padx=5, pady=(10, 2))
 
-        category_frame = tk.Frame(self.left_panel)
+        category_frame = tk.Frame(parent)
         category_frame.pack(fill=tk.BOTH, expand=False, padx=5)
 
         self.category_listbox = tk.Listbox(category_frame, height=5)
@@ -397,10 +408,11 @@ class FeedMind:
         cat_scroll.pack(side=tk.RIGHT, fill=tk.Y)
         self.category_listbox.config(yscrollcommand=cat_scroll.set)
 
-        # Feeds section
-        tk.Label(self.left_panel, text="Feeds:", font=("Arial", 10, "bold")).pack(anchor=tk.W, padx=5, pady=(10, 2))
+    def _build_feed_list(self, parent):
+        """Feeds label, listbox, and scrollbar."""
+        tk.Label(parent, text="Feeds:", font=("Arial", 10, "bold")).pack(anchor=tk.W, padx=5, pady=(10, 2))
 
-        feed_frame = tk.Frame(self.left_panel)
+        feed_frame = tk.Frame(parent)
         feed_frame.pack(fill=tk.BOTH, expand=True, padx=5)
 
         self.feed_listbox = tk.Listbox(feed_frame)
@@ -411,8 +423,9 @@ class FeedMind:
         feed_scroll.pack(side=tk.RIGHT, fill=tk.Y)
         self.feed_listbox.config(yscrollcommand=feed_scroll.set)
 
-        # Refresh controls
-        refresh_frame = tk.Frame(self.left_panel)
+    def _build_refresh_controls(self, parent):
+        """Refresh / Refresh All / Bookmark / Mark All Read buttons."""
+        refresh_frame = tk.Frame(parent)
         refresh_frame.pack(fill=tk.X, padx=5, pady=5)
 
         self.refresh_btn = tk.Button(refresh_frame, text="Refresh Feed", command=self._refresh_feed)
@@ -431,8 +444,16 @@ class FeedMind:
 
     def _create_right_panel(self):
         """Create right panel with article list and content."""
-        # Search bar
-        search_frame = tk.Frame(self.right_panel)
+        self._build_search_bar(self.right_panel)
+        self._build_sort_filter_bar(self.right_panel)
+        self._build_article_list(self.right_panel)
+        self._build_detail_pane(self.right_panel)
+        self._build_action_buttons(self.right_panel)
+        self._build_media_players(self.right_panel)
+
+    def _build_search_bar(self, parent):
+        """Search entry with Search / Clear buttons."""
+        search_frame = tk.Frame(parent)
         search_frame.pack(fill=tk.X, padx=5, pady=5)
 
         tk.Label(search_frame, text="Search:").pack(side=tk.LEFT, padx=(0, 5))
@@ -447,8 +468,9 @@ class FeedMind:
         self.clear_search_btn = tk.Button(search_frame, text="Clear", command=self._clear_search)
         self.clear_search_btn.pack(side=tk.LEFT)
 
-        # V3.7: Sort and filter controls
-        sort_filter_frame = tk.Frame(self.right_panel)
+    def _build_sort_filter_bar(self, parent):
+        """V3.7 sort dropdown and the 7-day filter checkbox."""
+        sort_filter_frame = tk.Frame(parent)
         sort_filter_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
 
         tk.Label(sort_filter_frame, text="Sort:").pack(side=tk.LEFT, padx=(0, 5))
@@ -467,11 +489,11 @@ class FeedMind:
                                                command=self._toggle_7day_filter)
         self.show_7days_check.pack(side=tk.LEFT)
 
-        # Article list
-        list_frame = tk.Frame(self.right_panel)
+    def _build_article_list(self, parent):
+        """The article Treeview (status / title / date) and its scrollbar."""
+        list_frame = tk.Frame(parent)
         list_frame.pack(fill=tk.BOTH, expand=True, padx=5)
 
-        # Create Treeview for articles
         columns = ("status", "title", "date")
         self.article_tree = ttk.Treeview(list_frame, columns=columns, show="tree headings", height=15)
 
@@ -493,8 +515,9 @@ class FeedMind:
         tree_scroll.pack(side=tk.RIGHT, fill=tk.Y)
         self.article_tree.config(yscrollcommand=tree_scroll.set)
 
-        # Article details
-        detail_frame = tk.Frame(self.right_panel)
+    def _build_detail_pane(self, parent):
+        """Read-only article-details text area."""
+        detail_frame = tk.Frame(parent)
         detail_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
         tk.Label(detail_frame, text="Article Details:", font=("Arial", 10, "bold")).pack(anchor=tk.W)
@@ -509,8 +532,10 @@ class FeedMind:
         detail_scroll.pack(side=tk.RIGHT, fill=tk.Y)
         self.detail_text.config(yscrollcommand=detail_scroll.set, state=tk.DISABLED)
 
-        # Action buttons
-        action_frame = tk.Frame(self.right_panel)
+    def _build_action_buttons(self, parent):
+        """Per-article actions (open / read / favorite) and the hidden
+        podcast download button."""
+        action_frame = tk.Frame(parent)
         action_frame.pack(fill=tk.X, padx=5, pady=5)
 
         self.open_btn = tk.Button(action_frame, text="Open in Browser (O)", command=self._open_article)
@@ -522,24 +547,21 @@ class FeedMind:
         self.fav_btn = tk.Button(action_frame, text="Favorite (F)", command=self._toggle_favorite)
         self.fav_btn.pack(side=tk.LEFT, padx=2)
 
-        # Podcast buttons (V3 feature)
+        # Podcast download button (V3) — created hidden, shown for episodes.
         if PODCAST_SUPPORT:
             self.podcast_download_btn = tk.Button(action_frame, text="📥 Download Episode", command=self._download_podcast)
-            # Initially hidden
             self.podcast_download_btn.pack_forget()
 
-        # Podcast player (V3 feature)
+    def _build_media_players(self, parent):
+        """Audio (V3) and video (V3.6) player widgets — created hidden."""
         if PODCAST_SUPPORT:
-            self.audio_player = AudioPlayerWidget(self.right_panel)
+            self.audio_player = AudioPlayerWidget(parent)
             self.audio_player.pack(fill=tk.X, padx=5, pady=5)
-            # Initially hidden
             self.audio_player.pack_forget()
 
-        # Video player (V3.6 feature)
         if VIDEO_SUPPORT:
-            self.video_player = VideoPlayerWidget(self.right_panel)
+            self.video_player = VideoPlayerWidget(parent)
             self.video_player.pack(fill=tk.X, padx=5, pady=5)
-            # Initially hidden
             self.video_player.pack_forget()
 
     def _setup_keyboard_shortcuts(self):
