@@ -4,6 +4,30 @@ All notable changes to FeedMind are documented in this file.
 
 ---
 
+## v3.8.1 (2026-06-03)
+
+A maintenance release. **No user-facing behavior changes** — this is internal
+code-quality and developer-infrastructure work.
+
+### Internal / refactor
+- Decoupled the UI from the database schema: the app no longer reaches into
+  raw `conn.cursor()`; a single `RSSDatabase.get_article(id)` accessor backs
+  all per-article lookups.
+- Split the two monolithic panel-construction methods into 11 focused builder
+  methods, shrinking the main `FeedMind` class and improving readability.
+
+### Developer experience
+- Added a deterministic, network-free **pytest suite** (`tests/unit/`, 34
+  tests) covering the security and data-layer fixes, plus a **GitHub Actions
+  CI** workflow that runs it on every push/PR.
+- Added `pyproject.toml` (pytest config) and `requirements-dev.txt`.
+
+### Docs
+- Added `docs/PROJECT_OVERVIEW.md` — architecture summary and a proposed
+  feature roadmap.
+
+---
+
 ## v3.8.0 (2026-06-02)
 
 A security, stability, and UI release. No new feature surface, but

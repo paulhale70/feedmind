@@ -4,7 +4,7 @@ FeedMind 🧠 - AI-Powered RSS Feed Reader with Podcast & Video Support
 A modern, feature-rich RSS/Atom feed reader that combines intelligent
 content management with podcast/video support and AI-powered summaries.
 
-Version: 3.8.0
+Version: 3.8.1
 Features:
 - RSS/Atom feed parsing and management
 - Category organization and OPML import/export
@@ -23,7 +23,7 @@ Features:
 - Keyboard shortcuts
 """
 
-__version__ = "3.8.0"
+__version__ = "3.8.1"
 
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, simpledialog
