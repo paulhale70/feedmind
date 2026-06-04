@@ -1,0 +1,4 @@
+# Developer / CI dependencies (not needed to run the app).
+pytest>=8.0
+# Exercised by the security tests so XML parsing uses the hardened path.
+defusedxml>=0.7.1
