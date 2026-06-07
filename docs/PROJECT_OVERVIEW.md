@@ -53,7 +53,7 @@ A single Tkinter app coordinates a set of focused, mostly independent modules.
 |---|---|
 | `feedmind.py` | Main application & all UI (the large coordinator class) |
 | `rss_core.py` | Feed fetch + RSS/Atom parsing; the shared `safe_urlopen` SSRF/egress layer |
-| `rss_database.py` / `_v2` / `_v3` | Data layer. **V3 is the live class**, inheriting V2; **V1 is legacy/dead** (tests only) |
+| `rss_database_v2.py` / `_v3` | Data layer. **V3 is the live class**, inheriting V2 |
 | `rss_api_config.py` | API-key management (keyring-first, env-var aware) |
 | `rss_ai_summarizer.py` | AI summaries / TL;DR / key points (Claude, OpenAI, auto) |
 | `rss_article_extractor.py` | Full-text extraction (newspaper3k / trafilatura) |
