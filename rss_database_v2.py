@@ -231,11 +231,17 @@ class RSSDatabase:
         cursor.execute("SELECT * FROM categories ORDER BY name")
         return [dict(row) for row in cursor.fetchall()]
 
-    def delete_category(self, category_id: int):
-        """Delete a category (feeds will be set to Uncategorized)."""
+    def delete_category(self, category_id: int) -> bool:
+        """Delete a category; its feeds become Uncategorized.
+
+        Returns True if the category existed. Feeds are cleared explicitly
+        because databases upgraded with ALTER TABLE have no ON DELETE SET NULL.
+        """
         cursor = self.conn.cursor()
+        cursor.execute("UPDATE feeds SET category_id = NULL WHERE category_id = ?", (category_id,))
         cursor.execute("DELETE FROM categories WHERE id = ?", (category_id,))
         self.conn.commit()
+        return cursor.rowcount > 0
 
     # Feed Management
     def add_feed(self, url: str, title: Optional[str] = None, category_id: Optional[int] = None,
@@ -676,9 +682,9 @@ class RSSDatabase:
         """Alias for update_feed_last_refresh for compatibility."""
         self.update_feed_last_refresh(feed_url)
 
-    def remove_category(self, category_id: int):
+    def remove_category(self, category_id: int) -> bool:
         """Alias for delete_category for compatibility."""
-        self.delete_category(category_id)
+        return self.delete_category(category_id)
 
     def close(self):
         """Close all open database connections (one per thread)."""
