@@ -7,6 +7,7 @@ import logging
 from datetime import datetime
 from typing import Optional, List, Dict
 from rss_database_v2 import RSSDatabase as RSSDatabase_V2
+from rss_dates import published_sort_key
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -116,6 +117,13 @@ class RSSDatabase(RSSDatabase_V2):
             # value here is a hard-coded int, so this is safe.
             cursor.execute("PRAGMA user_version = 1")
 
+    def _cleanup_keep_clause(self) -> str:
+        """Also keep downloaded podcast episodes when clearing old articles,
+        so the download record (and the file it points to) isn't orphaned."""
+        return (super()._cleanup_keep_clause() + """
+            OR id IN (SELECT article_id FROM podcast_downloads
+                      WHERE download_status = 'completed')""")
+
     # Podcast Episode Methods
 
     def get_podcast_episodes(self, feed_url: Optional[str] = None,
@@ -158,7 +166,7 @@ class RSSDatabase(RSSDatabase_V2):
             query += " AND a.feed_url = ?"
             params.append(feed_url)
 
-        query += " ORDER BY a.published DESC LIMIT ?"
+        query += " ORDER BY a.published_sort DESC LIMIT ?"
         params.append(limit)
 
         cursor.execute(query, params)
@@ -348,22 +356,30 @@ class RSSDatabase(RSSDatabase_V2):
                 else:
                     link_to_use = article.link
 
+                # Skip articles removed by clear_old_articles so they don't
+                # return as unread.
+                if self._is_cleared(cursor, feed_url, link_to_use):
+                    continue
+
+                now = datetime.now()
                 cursor.execute("""
                     INSERT OR IGNORE INTO articles
                     (feed_url, title, link, description, published, cached_date,
-                     audio_url, audio_type, audio_length, duration_seconds)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     audio_url, audio_type, audio_length, duration_seconds,
+                     published_sort)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     feed_url,
                     article.title,
                     link_to_use,
                     article.description,
                     article.published,
-                    datetime.now().isoformat(),
+                    now.isoformat(),
                     audio_url,
                     audio_type,
                     audio_length,
-                    duration_seconds
+                    duration_seconds,
+                    published_sort_key(article.published, now),
                 ))
 
                 if cursor.rowcount > 0:
@@ -534,7 +550,7 @@ class RSSDatabase(RSSDatabase_V2):
         cursor.execute("""
             SELECT * FROM articles
             WHERE full_text IS NULL AND link != ''
-            ORDER BY published DESC
+            ORDER BY published_sort DESC
             LIMIT ?
         """, (limit,))
         return [dict(row) for row in cursor.fetchall()]
@@ -554,7 +570,7 @@ class RSSDatabase(RSSDatabase_V2):
             SELECT * FROM articles
             WHERE full_text IS NOT NULL
               AND ai_summary IS NULL
-            ORDER BY published DESC
+            ORDER BY published_sort DESC
             LIMIT ?
         """, (limit,))
         return [dict(row) for row in cursor.fetchall()]

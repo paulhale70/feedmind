@@ -10,6 +10,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
+from rss_dates import published_sort_key
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -93,7 +95,22 @@ class RSSDatabase:
                 is_read INTEGER DEFAULT 0,
                 read_date TEXT,
                 is_favorite INTEGER DEFAULT 0,
+                published_sort TEXT,
                 UNIQUE(feed_url, link)
+            )
+        """)
+
+        # Articles removed by clear_old_articles. cache_articles skips these so
+        # a cleared article that is still in its feed doesn't come back as
+        # unread on the next refresh. last_seen is bumped each time a refresh
+        # skips the article; once a feed stops listing it, the row ages out.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS cleared_articles (
+                feed_url TEXT NOT NULL,
+                link TEXT NOT NULL,
+                cleared_date TEXT NOT NULL,
+                last_seen TEXT NOT NULL,
+                PRIMARY KEY (feed_url, link)
             )
         """)
 
@@ -140,6 +157,28 @@ class RSSDatabase:
             cursor.execute("ALTER TABLE articles ADD COLUMN read_date TEXT")
         if 'is_favorite' not in columns:
             cursor.execute("ALTER TABLE articles ADD COLUMN is_favorite INTEGER DEFAULT 0")
+        if 'published_sort' not in columns:
+            cursor.execute("ALTER TABLE articles ADD COLUMN published_sort TEXT")
+
+        # Backfill the sort key for rows cached before the column existed. New
+        # rows always get a value, so after the first run this finds nothing.
+        cursor.execute("""
+            SELECT id, published, cached_date FROM articles
+            WHERE published_sort IS NULL
+        """)
+        backfill = [
+            (published_sort_key(published, self._parse_cached_date(cached)), row_id)
+            for row_id, published, cached in cursor.fetchall()
+        ]
+        if backfill:
+            cursor.executemany(
+                "UPDATE articles SET published_sort = ? WHERE id = ?", backfill
+            )
+            logger.info(f"Backfilled publish-date sort key for {len(backfill)} articles")
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_articles_published_sort
+            ON articles(published_sort)
+        """)
 
         # Check feeds table
         cursor.execute("PRAGMA table_info(feeds)")
@@ -151,6 +190,26 @@ class RSSDatabase:
             cursor.execute("ALTER TABLE feeds ADD COLUMN refresh_interval INTEGER DEFAULT 15")
         if 'last_refresh' not in feed_columns:
             cursor.execute("ALTER TABLE feeds ADD COLUMN last_refresh TEXT")
+
+    @staticmethod
+    def _parse_cached_date(value: Optional[str]) -> Optional[datetime]:
+        """Parse a cached_date column value (local-time ISO string)."""
+        try:
+            return datetime.fromisoformat(value) if value else None
+        except ValueError:
+            return None
+
+    def _is_cleared(self, cursor, feed_url: str, link: str) -> bool:
+        """True if this article was removed by clear_old_articles.
+
+        Also records that the feed still lists it, so the record isn't pruned
+        while the article could still come back.
+        """
+        cursor.execute("""
+            UPDATE cleared_articles SET last_seen = ?
+            WHERE feed_url = ? AND link = ?
+        """, (datetime.now().isoformat(), feed_url, link))
+        return cursor.rowcount > 0
 
     # Category Management
     def add_category(self, name: str, color: str = '#2196F3') -> Optional[int]:
@@ -221,9 +280,12 @@ class RSSDatabase:
         """Remove a feed subscription and its cached articles."""
         cursor = self.conn.cursor()
         cursor.execute("DELETE FROM feeds WHERE url = ?", (url,))
+        removed = cursor.rowcount > 0
         cursor.execute("DELETE FROM articles WHERE feed_url = ?", (url,))
+        # Forget cleared articles too, so re-subscribing starts fresh.
+        cursor.execute("DELETE FROM cleared_articles WHERE feed_url = ?", (url,))
         self.conn.commit()
-        return cursor.rowcount > 0
+        return removed
 
     def get_all_feeds(self, category_id: Optional[int] = None) -> list[dict]:
         """Get all subscribed feeds, optionally filtered by category."""
@@ -257,17 +319,22 @@ class RSSDatabase:
 
         for article in articles:
             try:
+                if self._is_cleared(cursor, feed_url, article.link):
+                    continue
+                now = datetime.now()
                 cursor.execute("""
                     INSERT OR REPLACE INTO articles
-                    (feed_url, title, link, description, published, cached_date)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    (feed_url, title, link, description, published, cached_date,
+                     published_sort)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, (
                     feed_url,
                     article.title,
                     article.link,
                     article.description,
                     article.published,
-                    datetime.now().isoformat()
+                    now.isoformat(),
+                    published_sort_key(article.published, now),
                 ))
                 cached_count += 1
             except Exception as e:
@@ -285,14 +352,14 @@ class RSSDatabase:
                 cursor.execute("""
                     SELECT * FROM articles
                     WHERE feed_url = ? AND is_read = 0
-                    ORDER BY published DESC, cached_date DESC
+                    ORDER BY published_sort DESC, cached_date DESC
                     LIMIT ?
                 """, (feed_url, limit))
             else:
                 cursor.execute("""
                     SELECT * FROM articles
                     WHERE feed_url = ?
-                    ORDER BY published DESC, cached_date DESC
+                    ORDER BY published_sort DESC, cached_date DESC
                     LIMIT ?
                 """, (feed_url, limit))
         else:
@@ -300,13 +367,13 @@ class RSSDatabase:
                 cursor.execute("""
                     SELECT * FROM articles
                     WHERE is_read = 0
-                    ORDER BY published DESC, cached_date DESC
+                    ORDER BY published_sort DESC, cached_date DESC
                     LIMIT ?
                 """, (limit,))
             else:
                 cursor.execute("""
                     SELECT * FROM articles
-                    ORDER BY published DESC, cached_date DESC
+                    ORDER BY published_sort DESC, cached_date DESC
                     LIMIT ?
                 """, (limit,))
 
@@ -347,14 +414,14 @@ class RSSDatabase:
             cursor.execute("""
                 SELECT * FROM articles
                 WHERE is_favorite = 1 AND feed_url = ?
-                ORDER BY published DESC, cached_date DESC
+                ORDER BY published_sort DESC, cached_date DESC
                 LIMIT ?
             """, (feed_url, limit))
         else:
             cursor.execute("""
                 SELECT * FROM articles
                 WHERE is_favorite = 1
-                ORDER BY published DESC, cached_date DESC
+                ORDER BY published_sort DESC, cached_date DESC
                 LIMIT ?
             """, (limit,))
         return [dict(row) for row in cursor.fetchall()]
@@ -371,6 +438,12 @@ class RSSDatabase:
             GROUP BY feed_url
         """)
         return {row[0]: row[1] for row in cursor.fetchall()}
+
+    def get_feed_article_count(self, feed_url: str) -> int:
+        """Return how many articles are cached for one feed."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM articles WHERE feed_url = ?", (feed_url,))
+        return cursor.fetchone()[0]
 
     def get_unread_count(self, feed_url: Optional[str] = None) -> int:
         """Get count of unread articles."""
@@ -417,7 +490,7 @@ class RSSDatabase:
         cursor.execute(f"""
             SELECT * FROM articles
             WHERE {where_clause}
-            ORDER BY published DESC, cached_date DESC
+            ORDER BY published_sort DESC, cached_date DESC
             LIMIT ?
         """, params)
 
@@ -445,20 +518,59 @@ class RSSDatabase:
         self.conn.commit()
         return count
 
+    # How long a cleared-article record is kept after its feed stops listing it.
+    CLEARED_RECORD_DAYS = 90
+
+    def _cleanup_keep_clause(self) -> str:
+        """SQL condition (on `articles`) for rows clear_old_articles must keep."""
+        return "is_favorite = 1"
+
     def clear_old_articles(self, days: int = 30):
-        """Remove articles older than specified days."""
+        """Remove articles cached more than `days` ago.
+
+        Favorites are never removed. Removed articles are remembered in
+        cleared_articles so a refresh doesn't re-add them as unread.
+        """
         cursor = self.conn.cursor()
-        cutoff_date = (datetime.now() - timedelta(days=days)).isoformat()
+        now = datetime.now()
+        cutoff_date = (now - timedelta(days=days)).isoformat()
+        where = f"cached_date < ? AND NOT ({self._cleanup_keep_clause()})"
 
-        cursor.execute("""
-            DELETE FROM articles
-            WHERE cached_date < ?
-        """, (cutoff_date,))
+        cursor.execute(f"""
+            INSERT OR REPLACE INTO cleared_articles
+                (feed_url, link, cleared_date, last_seen)
+            SELECT feed_url, link, ?, ? FROM articles WHERE {where}
+        """, (now.isoformat(), now.isoformat(), cutoff_date))
 
+        cursor.execute(f"DELETE FROM articles WHERE {where}", (cutoff_date,))
         deleted = cursor.rowcount
+
+        # Drop records for articles their feed has stopped listing: not seen for
+        # CLEARED_RECORD_DAYS even though the feed was refreshed after that
+        # point. (Requiring a later refresh means an app left unused for months
+        # doesn't forget everything and re-add it all as unread.)
+        stale = (now - timedelta(days=self.CLEARED_RECORD_DAYS)).isoformat()
+        cursor.execute("""
+            DELETE FROM cleared_articles
+            WHERE last_seen < ?
+              AND feed_url IN (SELECT url FROM feeds WHERE last_refresh >= ?)
+        """, (stale, stale))
+
         self.conn.commit()
         logger.info(f"Deleted {deleted} old articles")
         return deleted
+
+    def get_article_counts(self) -> dict:
+        """Return total, unread, and favorite article counts (uncapped)."""
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT COUNT(*),
+                   COALESCE(SUM(is_read = 0), 0),
+                   COALESCE(SUM(is_favorite = 1), 0)
+            FROM articles
+        """)
+        total, unread, favorites = cursor.fetchone()
+        return {'total': total, 'unread': unread, 'favorites': favorites}
 
     # Statistics
     def _increment_reading_stat(self):
