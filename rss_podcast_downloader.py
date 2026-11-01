@@ -6,6 +6,7 @@ Handles downloading podcast episodes with progress tracking.
 import logging
 import os
 import threading
+import time
 from pathlib import Path
 from typing import Optional, Callable
 from urllib.parse import urlparse, unquote
@@ -25,6 +26,11 @@ class PodcastDownloader:
     # podcasts, but bounds disk usage if a feed advertises (or streams) a file
     # of unbounded size.
     DEFAULT_MAX_BYTES = 2 * 1024 * 1024 * 1024  # 2 GiB
+
+    # Minimum seconds between progress callbacks. The UI marshals each one
+    # onto the Tk event loop, so calling it for every 8 KB chunk (~12,000
+    # times for a 100 MB episode) floods the queue and makes the app lag.
+    PROGRESS_INTERVAL = 0.25
 
     def __init__(self, download_dir: str = "podcast_downloads",
                  max_download_bytes: int = DEFAULT_MAX_BYTES):
@@ -103,6 +109,7 @@ class PodcastDownloader:
 
                 downloaded = 0
                 chunk_size = 8192
+                last_progress = 0.0
 
                 # Download in chunks
                 with open(file_path, 'wb') as f:
@@ -121,12 +128,14 @@ class PodcastDownloader:
 
                         f.write(chunk)
 
-                        # Call progress callback
-                        if progress_callback:
-                            try:
-                                progress_callback(downloaded, total_size)
-                            except Exception as e:
-                                logger.error(f"Progress callback error: {e}")
+                        # Report progress, throttled to PROGRESS_INTERVAL
+                        now = time.monotonic()
+                        if now - last_progress >= self.PROGRESS_INTERVAL:
+                            last_progress = now
+                            self._report_progress(progress_callback, downloaded, total_size)
+
+                # Always report the final total so the UI reaches 100%.
+                self._report_progress(progress_callback, downloaded, total_size)
 
             # Download completed successfully
             file_size = file_path.stat().st_size
@@ -162,6 +171,17 @@ class PodcastDownloader:
             # Remove from active downloads
             if audio_url in self.active_downloads:
                 del self.active_downloads[audio_url]
+
+    @staticmethod
+    def _report_progress(progress_callback: Optional[Callable],
+                         downloaded: int, total_size: int):
+        """Call the progress callback, logging (not raising) its errors."""
+        if not progress_callback:
+            return
+        try:
+            progress_callback(downloaded, total_size)
+        except Exception as e:
+            logger.error(f"Progress callback error: {e}")
 
     def _remove_partial(self, file_path: Path):
         """Delete a partially-downloaded file after a failed download."""
