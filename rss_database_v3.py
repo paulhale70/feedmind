@@ -81,6 +81,11 @@ class RSSDatabase(RSSDatabase_V2):
         if 'ai_generated_date' not in columns:
             cursor.execute("ALTER TABLE articles ADD COLUMN ai_generated_date TEXT")
 
+        # The article's own web page. For podcast episodes `link` holds the
+        # audio URL (for uniqueness), so the episode page is kept here.
+        if 'page_link' not in columns:
+            cursor.execute("ALTER TABLE articles ADD COLUMN page_link TEXT")
+
         # Check feeds table for scheduling columns
         cursor.execute("PRAGMA table_info(feeds)")
         feed_columns = {row[1] for row in cursor.fetchall()}
@@ -346,8 +351,15 @@ class RSSDatabase(RSSDatabase_V2):
                         WHERE feed_url = ? AND audio_url = ?
                     """, (feed_url, audio_url))
 
-                    if cursor.fetchone():
-                        # Episode already exists, skip
+                    existing = cursor.fetchone()
+                    if existing:
+                        # Episode already exists. Fill in its page link if it
+                        # was cached before page_link was stored.
+                        if article.link:
+                            cursor.execute("""
+                                UPDATE articles SET page_link = ?
+                                WHERE id = ? AND page_link IS NULL
+                            """, (article.link, existing[0]))
                         continue
 
                     # Use audio_url as the link to avoid duplicate link conflicts
@@ -366,8 +378,8 @@ class RSSDatabase(RSSDatabase_V2):
                     INSERT OR IGNORE INTO articles
                     (feed_url, title, link, description, published, cached_date,
                      audio_url, audio_type, audio_length, duration_seconds,
-                     published_sort)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     published_sort, page_link)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     feed_url,
                     article.title,
@@ -380,6 +392,7 @@ class RSSDatabase(RSSDatabase_V2):
                     audio_length,
                     duration_seconds,
                     published_sort_key(article.published, now),
+                    article.link or None,
                 ))
 
                 if cursor.rowcount > 0:

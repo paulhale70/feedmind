@@ -52,6 +52,24 @@ def parse_published_date(date_str: Optional[str]) -> Optional[datetime]:
     return None
 
 
+def format_display_date(published: Optional[str]) -> str:
+    """Short YYYY-MM-DD date for the article list.
+
+    Timestamps are shown in the computer's local time zone. A bare date
+    ("2026-10-27") has no time to convert, so it is shown as-is. Strings that
+    can't be parsed are shown truncated rather than hidden.
+    """
+    if not published or not isinstance(published, str):
+        return ""
+    text = published.strip()
+    dt = parse_published_date(text)
+    if dt is None:
+        return text[:16]
+    if len(text) > 10:  # has a time component: convert UTC -> local
+        dt = dt.replace(tzinfo=timezone.utc).astimezone()
+    return dt.strftime("%Y-%m-%d")
+
+
 def published_sort_key(published: Optional[str],
                        fallback: Optional[datetime] = None) -> str:
     """Return the published_sort value for an article.

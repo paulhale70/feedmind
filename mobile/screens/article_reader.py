@@ -9,6 +9,8 @@ from kivy.properties import DictProperty, StringProperty, BooleanProperty
 from kivy.clock import Clock
 from threading import Thread
 
+from rss_core import article_page_link
+
 
 class ArticleReaderScreen(MDScreen):
     """Screen for reading full article content."""
@@ -27,7 +29,7 @@ class ArticleReaderScreen(MDScreen):
         self.article = article_data
         self.article_title = article_data.get('title', 'Untitled')
         self.article_content = article_data.get('description', '')
-        self.article_link = article_data.get('link', '')
+        self.article_link = article_page_link(article_data)
         self.is_favorite = bool(article_data.get('is_favorite', 0))
 
         # Update UI

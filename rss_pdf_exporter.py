@@ -8,6 +8,8 @@ from datetime import datetime
 from typing import List, Dict, Optional
 from xml.sax.saxutils import escape
 
+from rss_core import article_page_link
+
 try:
     from reportlab.lib.pagesizes import letter, A4
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -139,7 +141,7 @@ class PDFExporter:
 
                 # Link — escape so a feed link containing quotes or angle
                 # brackets can't break reportlab's mini-markup.
-                link = article.get('link', '')
+                link = article_page_link(article)
                 if link:
                     safe_href = escape(link, {'"': '&quot;'})
                     safe_text = escape(link)
@@ -208,7 +210,7 @@ class PDFExporter:
 
             for i, article in enumerate(articles):
                 title_text = PDFExporter._clean_html(article.get('title', 'Untitled'))
-                link = article.get('link', '')
+                link = article_page_link(article)
 
                 if link:
                     story.append(Paragraph(

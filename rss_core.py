@@ -44,6 +44,35 @@ def _is_public_ip(ip: ipaddress._BaseAddress) -> bool:
     )
 
 
+# Off by default. When the user opts in (Preferences > General), feeds on
+# their own machine or LAN -- localhost, 192.168.x.x, 10.x.x.x -- are allowed,
+# e.g. a self-hosted RSS-Bridge or FreshRSS. Link-local addresses (including
+# the 169.254.169.254 cloud-metadata endpoint), multicast, unspecified, and
+# reserved ranges stay blocked either way.
+_allow_private_addresses = False
+
+
+def set_allow_private_addresses(allowed: bool) -> None:
+    """Allow or block fetching from loopback and private-network addresses."""
+    global _allow_private_addresses
+    _allow_private_addresses = bool(allowed)
+
+
+def _is_allowed_ip(ip: ipaddress._BaseAddress) -> bool:
+    """True if a fetch to this address is permitted under the current setting."""
+    if _is_public_ip(ip):
+        return True
+    if not _allow_private_addresses:
+        return False
+    if ip.is_link_local or ip.is_multicast or ip.is_unspecified:
+        return False
+    # Loopback and private ranges are the opt-in. Python flags some private
+    # ranges as reserved too, so test the opt-in ranges before is_reserved.
+    if ip.is_loopback or ip.is_private:
+        return True
+    return not ip.is_reserved
+
+
 def _validate_url(url: str) -> None:
     parsed = urlparse(url)
     if parsed.scheme.lower() not in _ALLOWED_SCHEMES:
@@ -69,10 +98,13 @@ def _validate_url(url: str) -> None:
             raise UnsafeURLError(
                 f"Host '{hostname}' resolved to an unparseable address: {sockaddr[0]}"
             )
-        if not _is_public_ip(ip):
+        if not _is_allowed_ip(ip):
+            hint = ("" if _allow_private_addresses else
+                    " (to allow local-network feeds, enable it in "
+                    "Manage > Preferences > General)")
             raise UnsafeURLError(
                 f"URL '{url}' resolves to non-public address {ip}; "
-                f"blocked to prevent SSRF"
+                f"blocked to prevent SSRF{hint}"
             )
 
 
@@ -159,6 +191,16 @@ class RSSFeed:
         return f"RSSFeed(title='{self.title}', link='{self.link}')"
 
 
+def article_page_link(article: dict) -> str:
+    """The web page to open for a cached article (a database row dict).
+
+    Podcast episodes are stored with link = audio URL (so episodes that share
+    one show-page link stay unique); their real page is in page_link. Older
+    rows cached before page_link existed fall back to link.
+    """
+    return (article.get('page_link') or article.get('link') or '').strip()
+
+
 class RSSFetcher:
     """Fetches and parses RSS feeds from URLs using built-in XML parser."""
 
@@ -212,24 +254,43 @@ class RSSFetcher:
 
         return 0
 
+    # RSS 1.0 (RDF) puts channel/item/title/link/description in its own
+    # namespace; RSS 2.0 uses no namespace. Dublin Core supplies dc:date.
+    _RSS1_NS = 'http://purl.org/rss/1.0/'
+    _DC_NS = 'http://purl.org/dc/elements/1.1/'
+
+    def _rss_text(self, elem, tag: str) -> Optional[str]:
+        """Text of an RSS 2.0 child element, or its RSS 1.0 equivalent."""
+        value = elem.findtext(tag)
+        if value is None:
+            value = elem.findtext(f'{{{self._RSS1_NS}}}{tag}')
+        return value
+
     def _parse_rss(self, xml_content: bytes, url: str) -> list[RSSFeed]:
-        """Parse RSS 2.0 format."""
+        """Parse RSS 2.0 and RSS 1.0 (RDF) formats."""
         try:
             root = _safe_fromstring(xml_content)
             articles = []
 
             # Extract feed title from channel
             channel = root.find('.//channel')
+            if channel is None:
+                channel = root.find(f'.//{{{self._RSS1_NS}}}channel')
             feed_title = ""
             if channel is not None:
-                feed_title = channel.findtext('title', url)
+                feed_title = self._rss_text(channel, 'title') or url
 
-            # Find all item elements
-            for item in root.findall('.//item'):
-                title = item.findtext('title', 'No Title')
-                link = item.findtext('link', '')
-                description = item.findtext('description', '')
-                pub_date = item.findtext('pubDate', '')
+            # Find all item elements (RSS 2.0, else RSS 1.0)
+            items = (root.findall('.//item')
+                     or root.findall(f'.//{{{self._RSS1_NS}}}item'))
+            for item in items:
+                title = self._rss_text(item, 'title')
+                if title is None:
+                    title = 'No Title'
+                link = (self._rss_text(item, 'link') or '').strip()
+                description = self._rss_text(item, 'description') or ''
+                pub_date = (item.findtext('pubDate')
+                            or item.findtext(f'{{{self._DC_NS}}}date', ''))
 
                 # Clean description from HTML
                 description = self._clean_html(description)
@@ -274,6 +335,31 @@ class RSSFetcher:
             logger.error(f"Failed to parse RSS XML: {e}")
             raise
 
+    # Atom link relations that never point at the article's web page.
+    _ATOM_NON_ARTICLE_RELS = frozenset({'self', 'enclosure', 'edit', 'replies', 'license'})
+
+    def _atom_article_link(self, entry, namespace: dict) -> str:
+        """Pick an Atom entry's web-page link.
+
+        Entries can have several <link>s (self, enclosure, replies, ...). Prefer
+        rel="alternate" (the default when rel is absent) with an HTML type, then
+        any alternate, then any other link that isn't clearly non-article.
+        """
+        links = entry.findall('link') + entry.findall('atom:link', namespace)
+        alternate = fallback = None
+        for link_el in links:
+            href = (link_el.get('href') or '').strip()
+            if not href:
+                continue
+            rel = link_el.get('rel', 'alternate')
+            if rel == 'alternate':
+                if link_el.get('type', 'text/html') in ('text/html', 'application/xhtml+xml'):
+                    return href
+                alternate = alternate or href
+            elif rel not in self._ATOM_NON_ARTICLE_RELS:
+                fallback = fallback or href
+        return alternate or fallback or ''
+
     def _parse_atom(self, xml_content: bytes, url: str) -> list[RSSFeed]:
         """Parse Atom format."""
         try:
@@ -301,10 +387,7 @@ class RSSFetcher:
                     title_elem = entry.find('atom:title', namespace)
                 title = title_elem.text if title_elem is not None else 'No Title'
 
-                link_elem = entry.find('link')
-                if link_elem is None:
-                    link_elem = entry.find('atom:link', namespace)
-                link = link_elem.get('href', '') if link_elem is not None else ''
+                link = self._atom_article_link(entry, namespace)
 
                 # Try content, then summary
                 content_elem = entry.find('content')

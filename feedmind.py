@@ -33,8 +33,8 @@ import os
 import logging
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict
-from rss_core import RSSFetcher
-from rss_dates import parse_published_date
+from rss_core import RSSFetcher, article_page_link, set_allow_private_addresses
+from rss_dates import format_display_date, parse_published_date
 from rss_database_v3 import RSSDatabase  # V3 database with podcast and AI support
 from rss_opml import OPMLHandler
 from rss_themes import LightTheme, DarkTheme, Theme
@@ -135,6 +135,7 @@ class FeedMind:
         # Load preferences
         notifications_enabled = self.db.get_setting("notifications_enabled", "true") == "true"
         self.notifier.set_enabled(notifications_enabled)
+        self._apply_network_preferences()
 
         # Update logging based on saved preference
         logging_enabled = self.db.get_setting("logging_enabled", "true") == "true"
@@ -797,7 +798,7 @@ class FeedMind:
             unread_marker = "●" if not article['is_read'] else ""
             fav_marker = "★" if article['is_favorite'] else ""
 
-            date_str = article['published'][:10] if article['published'] else ""
+            date_str = format_display_date(article['published'])
 
             # The article ID must stay the first tag (_on_article_select reads
             # tags[0]); the read/unread tag after it carries the styling.
@@ -1124,7 +1125,7 @@ class FeedMind:
         if article:
             title = article['title']
             desc = article['description']
-            link = article['link']
+            link = article_page_link(article)
             date = article['published']
             is_read = article['is_read']
             is_fav = article['is_favorite']
@@ -1144,6 +1145,8 @@ class FeedMind:
                 self.detail_text.insert(tk.END, f"🎙️ Podcast Episode ({mins}:{secs:02d})\n\n")
 
             self.detail_text.insert(tk.END, f"Link: {link}\n\n")
+            if audio_url and audio_url != link:
+                self.detail_text.insert(tk.END, f"Audio: {audio_url}\n\n")
             self.detail_text.insert(tk.END, f"Description:\n{desc}\n")
             self.detail_text.config(state=tk.DISABLED)
 
@@ -1194,7 +1197,7 @@ class FeedMind:
 
         article = self.db.get_article(self.selected_article_id)
         if article:
-            link = article['link'] or ""
+            link = article_page_link(article)
             # Feed-supplied links are untrusted; only hand http(s) URLs to the
             # browser so a malicious feed can't trigger file://, javascript:, or
             # other scheme handlers.
@@ -1386,7 +1389,7 @@ class FeedMind:
         for article in articles:
             unread_marker = "●" if not article['is_read'] else ""
             fav_marker = "★" if article['is_favorite'] else ""
-            date_str = article['published'][:10] if article['published'] else ""
+            date_str = format_display_date(article['published'])
 
             self.article_tree.insert("", tk.END, text=unread_marker,
                                      values=(fav_marker, article['title'], date_str),
@@ -1671,6 +1674,11 @@ class FeedMind:
         # Reload notification settings
         notifications_enabled = self.db.get_setting("notifications_enabled", "true") == "true"
         self.notifier.set_enabled(notifications_enabled)
+        self._apply_network_preferences()
+
+    def _apply_network_preferences(self):
+        """Apply the 'allow local-network feeds' preference to all fetching."""
+        set_allow_private_addresses(self.db.get_setting("allow_local_feeds", "false") == "true")
 
     def _set_status(self, message: str):
         """Update status label."""
@@ -1713,7 +1721,7 @@ class FeedMind:
         if not article:
             return
 
-        title, link, existing_full_text = article['title'], article['link'], article['full_text']
+        title, link, existing_full_text = article['title'], article_page_link(article), article['full_text']
 
         if existing_full_text:
             messagebox.showinfo("Already Extracted", f"Full text already extracted for:\n{title}\n\n{len(existing_full_text)} characters")
@@ -2248,7 +2256,7 @@ class PreferencesDialog:
 
         self.dialog = tk.Toplevel(parent)
         self.dialog.title("Preferences")
-        self.dialog.geometry("450x300")
+        self.dialog.geometry("450x380")
         self.dialog.transient(parent)
         self.dialog.grab_set()
 
@@ -2372,6 +2380,17 @@ class PreferencesDialog:
                 font=("Arial", 9)
             ).pack(pady=5)
 
+        # Local-network feeds (off by default; see rss_core._is_allowed_ip)
+        tk.Label(parent, text="Network:", font=("Arial", 10, "bold")).pack(anchor=tk.W, padx=10, pady=(10, 0))
+        self.allow_local_var = tk.BooleanVar(
+            value=self.db.get_setting("allow_local_feeds", "false") == "true")
+        tk.Checkbutton(
+            parent,
+            text="Allow feeds on this computer or local network\n"
+                 "(localhost, 192.168.x.x, 10.x.x.x - e.g. a self-hosted RSS-Bridge)",
+            variable=self.allow_local_var, justify=tk.LEFT
+        ).pack(anchor=tk.W, padx=20)
+
         # Database info
         tk.Label(parent, text=f"\nDatabase Location:", font=("Arial", 10, "bold")).pack(anchor=tk.W, padx=10)
         tk.Label(parent, text=f"  {self.db.db_path}", fg="gray").pack(anchor=tk.W, padx=10)
@@ -2451,6 +2470,9 @@ class PreferencesDialog:
 
     def _save(self):
         """Save preferences."""
+        # Save network setting
+        self.db.set_setting("allow_local_feeds", "true" if self.allow_local_var.get() else "false")
+
         # Save notification setting
         self.db.set_setting("notifications_enabled", "true" if self.notif_enabled_var.get() else "false")
 

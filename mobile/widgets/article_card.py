@@ -10,6 +10,8 @@ from kivymd.uix.label import MDLabel
 from kivy.properties import StringProperty, BooleanProperty, DictProperty
 from kivy.metrics import dp
 
+from rss_dates import format_display_date
+
 
 class ArticleCard(MDCard, RippleBehavior):
     """Material Design card for article display."""
@@ -85,7 +87,7 @@ class ArticleCard(MDCard, RippleBehavior):
         # Feed title and date
         meta_text = self.feed_title
         if self.published:
-            meta_text += f" • {self.published[:10]}"  # Just the date part
+            meta_text += f" • {format_display_date(self.published)}"
 
         meta_label = MDLabel(
             text=meta_text,
