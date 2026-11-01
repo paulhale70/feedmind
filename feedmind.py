@@ -736,9 +736,10 @@ class FeedMind:
             self.category_listbox.insert(tk.END, cat['name'])
             self.category_ids.append(cat['id'])
 
-        # Select "All" by default
-        if self.current_category_id is None:
-            self.category_listbox.selection_set(0)
+        # A removed category can't stay selected: fall back to "All Feeds".
+        if self.current_category_id not in self.category_ids:
+            self.current_category_id = None
+        self.category_listbox.selection_set(self.category_ids.index(self.current_category_id))
 
     @staticmethod
     def _article_tags(article: dict) -> tuple:
@@ -1262,8 +1263,12 @@ class FeedMind:
         if not PODCAST_SUPPORT or not self.selected_article_id:
             return
 
+        # Remember which article this download belongs to: the user may select
+        # a different one before it finishes.
+        article_id = self.selected_article_id
+
         # Get article with audio URL
-        article = self.db.get_article(self.selected_article_id)
+        article = self.db.get_article(article_id)
         if not article or not article['audio_url']:
             messagebox.showwarning("No Podcast", "This article is not a podcast episode")
             return
@@ -1271,7 +1276,7 @@ class FeedMind:
         audio_url, title = article['audio_url'], article['title']
 
         # Check if already downloaded
-        existing_path = self.db.get_download_path(self.selected_article_id)
+        existing_path = self.db.get_download_path(article_id)
         if existing_path and os.path.exists(existing_path):
             self.logger.info(f"Episode already downloaded: {title}")
             messagebox.showinfo("Already Downloaded", "This episode is already downloaded")
@@ -1304,7 +1309,7 @@ class FeedMind:
 
                     # Store in database
                     self.db.add_podcast_download(
-                        self.selected_article_id,
+                        article_id,
                         audio_url,
                         file_path,
                         file_size,
@@ -1314,8 +1319,8 @@ class FeedMind:
                     self.logger.info(f"Podcast download complete: {title} ({file_size // 1024 // 1024} MB)")
                     self.root.after(0, lambda: messagebox.showinfo("Success", f"Episode downloaded!\n\n{file_size // 1024 // 1024} MB"))
                     self.root.after(0, lambda: self._set_status("Download complete"))
-                    # Reload article to show player with downloaded episode
-                    self.root.after(0, lambda: self._on_article_select(None))
+                    # Reload the article to show the player, if it is still the one shown
+                    self.root.after(0, lambda: self._reload_if_selected(article_id))
                 except Exception as e:
                     self.logger.error(f"Failed to save podcast download info: {e}", exc_info=True)
                     self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to save download info: {e}"))
@@ -1335,6 +1340,11 @@ class FeedMind:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to start download: {e}")
             self._set_status("Ready")
+
+    def _reload_if_selected(self, article_id):
+        """Redisplay the article pane if article_id is still the selected article."""
+        if self.selected_article_id == article_id:
+            self._on_article_select(None)
 
     def _change_view(self, view: str):
         """Change view mode (all/unread/favorites)."""
