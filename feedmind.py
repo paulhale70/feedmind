@@ -33,8 +33,8 @@ import os
 import logging
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict
-from email.utils import parsedate_to_datetime
 from rss_core import RSSFetcher
+from rss_dates import parse_published_date
 from rss_database_v3 import RSSDatabase  # V3 database with podcast and AI support
 from rss_opml import OPMLHandler
 from rss_themes import LightTheme, DarkTheme, Theme
@@ -114,6 +114,9 @@ def setup_logging(enabled: bool = True, log_level: str = "INFO") -> logging.Logg
 
 class FeedMind:
     """FeedMind - AI-Powered RSS Reader with Podcast Support."""
+
+    # Most articles shown in the list (and exported) at once: the newest N.
+    ARTICLE_LIST_LIMIT = 1000
 
     def __init__(self, root: tk.Tk):
         self.root = root
@@ -210,52 +213,9 @@ class FeedMind:
             self.current_theme = LightTheme()
 
     def _parse_published_date(self, date_str: str) -> Optional[datetime]:
-        """
-        Parse published date from various formats (RFC 822, ISO 8601, etc.).
-
-        Returns naive (UTC) datetime object or None if parsing fails.
-        All timezone-aware datetimes are converted to UTC then stripped of tzinfo
-        to ensure consistent comparisons.
-        """
-        if not date_str:
-            return None
-
-        def _strip_tz(dt: datetime) -> datetime:
-            """Convert aware datetime to naive UTC."""
-            if dt.tzinfo is not None:
-                from datetime import timezone
-                dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
-            return dt
-
-        # Try RFC 822 format (common in RSS feeds): "Thu, 15 Feb 2024 10:30:00 GMT"
-        try:
-            return _strip_tz(parsedate_to_datetime(date_str))
-        except (TypeError, ValueError):
-            pass
-
-        # Try ISO 8601 format (common in Atom feeds): "2024-02-15T10:30:00Z"
-        try:
-            # Handle both with and without timezone
-            if 'T' in date_str:
-                # Remove timezone info for simple parsing
-                clean_date = date_str.replace('Z', '').split('+')[0].split('-', 3)
-                if len(clean_date) >= 3:
-                    date_part = '-'.join(clean_date[:3])
-                    if 'T' in date_part:
-                        return _strip_tz(datetime.fromisoformat(date_str.replace('Z', '+00:00')))
-            return _strip_tz(datetime.fromisoformat(date_str.replace('Z', '')))
-        except (ValueError, AttributeError):
-            pass
-
-        # Try simple date format: "2024-02-15"
-        try:
-            return datetime.strptime(date_str[:10], "%Y-%m-%d")
-        except (ValueError, AttributeError):
-            pass
-
-        # If all parsing fails, return None
-        self.logger.debug(f"Failed to parse date: {date_str}")
-        return None
+        """Parse a feed date (RFC 822, ISO 8601, ...) to a naive UTC datetime,
+        or None if it can't be parsed. See rss_dates.parse_published_date."""
+        return parse_published_date(date_str)
 
     def _create_menu(self):
         """Create application menu bar."""
@@ -564,19 +524,47 @@ class FeedMind:
             self.video_player.pack(fill=tk.X, padx=5, pady=5)
             self.video_player.pack_forget()
 
+    # Widget classes that accept typed text. Plain-key shortcuts are ignored
+    # while one of these has focus, so typing "feeds.bbc.co.uk" into the URL
+    # box doesn't toggle favorite/read, open the browser, bookmark, etc.
+    _TEXT_INPUT_CLASSES = frozenset({'Entry', 'TEntry', 'Spinbox', 'TSpinbox', 'TCombobox'})
+
+    def _typing_in_field(self) -> bool:
+        """True if keyboard focus is in a widget the user can type into."""
+        try:
+            widget = self.root.focus_get()
+        except (KeyError, tk.TclError):
+            # focus_get can fail on internal widgets such as a combobox popdown.
+            return False
+        if widget is None:
+            return False
+        widget_class = widget.winfo_class()
+        if widget_class in self._TEXT_INPUT_CLASSES:
+            return True
+        # A disabled Text (like the article details pane) can't be typed in.
+        return widget_class == 'Text' and str(widget.cget('state')) == tk.NORMAL
+
+    def _bind_key(self, sequence: str, action):
+        """Bind a plain-key shortcut that is skipped while typing in a field."""
+        def handler(event):
+            if not self._typing_in_field():
+                action()
+        self.root.bind(sequence, handler)
+
     def _setup_keyboard_shortcuts(self):
         """Set up keyboard shortcuts."""
+        # Plain keys go through _bind_key so they don't fire while typing.
         # Navigation
-        self.root.bind('j', lambda e: self._next_article())
-        self.root.bind('k', lambda e: self._prev_article())
-        self.root.bind('o', lambda e: self._open_article())
-        self.root.bind('<Return>', lambda e: self._open_article() if self.selected_article_id else None)
+        self._bind_key('j', self._next_article)
+        self._bind_key('k', self._prev_article)
+        self._bind_key('o', self._open_article)
+        self._bind_key('<Return>', lambda: self._open_article() if self.selected_article_id else None)
 
         # Actions
-        self.root.bind('r', lambda e: self._toggle_read())
-        self.root.bind('f', lambda e: self._toggle_favorite())
-        self.root.bind('b', lambda e: self._toggle_feed_bookmark())  # V3.7: Bookmark feed
-        self.root.bind('n', lambda e: self.url_entry.focus())
+        self._bind_key('r', self._toggle_read)
+        self._bind_key('f', self._toggle_favorite)
+        self._bind_key('b', self._toggle_feed_bookmark)  # V3.7: Bookmark feed
+        self._bind_key('n', self.url_entry.focus)
         self.root.bind('<Control-r>', lambda e: self._refresh_feed())
         self.root.bind('<Control-Shift-R>', lambda e: self._refresh_all())
         self.root.bind('<Control-f>', lambda e: self.search_entry.focus())
@@ -585,9 +573,9 @@ class FeedMind:
         self.root.bind('<Escape>', lambda e: self._clear_search())
 
         # View switching
-        self.root.bind('1', lambda e: self._change_view("all"))
-        self.root.bind('2', lambda e: self._change_view("unread"))
-        self.root.bind('3', lambda e: self._change_view("favorites"))
+        self._bind_key('1', lambda: self._change_view("all"))
+        self._bind_key('2', lambda: self._change_view("unread"))
+        self._bind_key('3', lambda: self._change_view("favorites"))
 
         # Menu shortcuts
         self.root.bind('<Control-i>', lambda e: self._import_opml())
@@ -596,8 +584,8 @@ class FeedMind:
         self.root.bind('<Control-m>', lambda e: self._manage_categories())
 
         # Scrolling
-        self.root.bind('<space>', lambda e: self._scroll_article(1))
-        self.root.bind('<Shift-space>', lambda e: self._scroll_article(-1))
+        self._bind_key('<space>', lambda: self._scroll_article(1))
+        self._bind_key('<Shift-space>', lambda: self._scroll_article(-1))
 
     def _apply_theme(self):
         """Apply current theme to all widgets."""
@@ -751,23 +739,26 @@ class FeedMind:
         if self.current_category_id is None:
             self.category_listbox.selection_set(0)
 
+    @staticmethod
+    def _article_tags(article: dict) -> tuple:
+        """Treeview tags for an article row: its ID, then 'unread' or 'read'."""
+        return (str(article['id']), 'read' if article['is_read'] else 'unread')
+
     def _update_view(self):
         """Update article list based on current view and filters."""
         self.article_tree.delete(*self.article_tree.get_children())
 
         # Get articles based on view
         if self.current_view == "favorites":
-            articles = self.db.get_favorites(self.current_feed_url)
+            articles = self.db.get_favorites(self.current_feed_url,
+                                             limit=self.ARTICLE_LIST_LIMIT)
         elif self.current_view == "unread":
-            if self.current_feed_url:
-                articles = self.db.get_cached_articles(self.current_feed_url, unread_only=True)
-            else:
-                articles = self.db.search_articles("", show_read=False)
+            articles = self.db.get_cached_articles(self.current_feed_url,
+                                                   limit=self.ARTICLE_LIST_LIMIT,
+                                                   unread_only=True)
         else:  # all
-            if self.current_feed_url:
-                articles = self.db.get_cached_articles(self.current_feed_url)
-            else:
-                articles = self.db.get_cached_articles()
+            articles = self.db.get_cached_articles(self.current_feed_url,
+                                                   limit=self.ARTICLE_LIST_LIMIT)
 
         # V3.7: Track article counts for user feedback
         total_before_filter = len(articles)
@@ -808,17 +799,11 @@ class FeedMind:
 
             date_str = article['published'][:10] if article['published'] else ""
 
-            # Use theme colors for read/unread
-            tags = []
-            if not article['is_read']:
-                tags.append('unread')
-            else:
-                tags.append('read')
-
-            item_id = self.article_tree.insert("", tk.END, text=unread_marker,
-                                               values=(fav_marker, article['title'], date_str),
-                                               tags=tags)
-            self.article_tree.item(item_id, tags=(str(article['id']),))
+            # The article ID must stay the first tag (_on_article_select reads
+            # tags[0]); the read/unread tag after it carries the styling.
+            self.article_tree.insert("", tk.END, text=unread_marker,
+                                     values=(fav_marker, article['title'], date_str),
+                                     tags=self._article_tags(article))
 
         # Configure tags for styling
         self.article_tree.tag_configure('unread', font=("Arial", 10, "bold"))
@@ -844,11 +829,9 @@ class FeedMind:
         themed buttons, so we also swap the background colour)."""
         if not hasattr(self, 'all_btn'):
             return
-        # Derive all three counts from a single fetch instead of three scans.
-        all_articles = self.db.get_cached_articles()
-        total = len(all_articles)
-        unread = sum(1 for a in all_articles if not a['is_read'])
-        favorites = sum(1 for a in all_articles if a['is_favorite'])
+        # Counted in SQL so they aren't capped by the article-list limit.
+        counts = self.db.get_article_counts()
+        total, unread, favorites = counts['total'], counts['unread'], counts['favorites']
 
         self.all_btn.config(text=f"All ({total})")
         self.unread_btn.config(text=f"Unread ({unread})")
@@ -1036,15 +1019,9 @@ class FeedMind:
     def _cache_and_refresh_view(self, url: str, articles: list):
         """Cache articles and refresh view (main thread only)."""
         try:
-            # Count articles before caching
-            old_count = len(self.db.get_cached_articles(url))
-
-            self.db.cache_articles(articles, url)
+            new_count = self.db.cache_articles(articles, url) or 0
             self.db.update_last_refresh(url)
-
-            # Count new articles
-            new_count = len(self.db.get_cached_articles(url)) - old_count
-            total_count = len(self.db.get_cached_articles(url))
+            total_count = self.db.get_feed_article_count(url)
 
             # Show notification if there are new articles
             if new_count > 0:
@@ -1079,7 +1056,7 @@ class FeedMind:
         self._update_view()
 
         # V3.7: Count total articles
-        total_articles = len(self.db.get_cached_articles())
+        total_articles = self.db.get_article_counts()['total']
         status_msg = f"All feeds refreshed - {total_articles} total articles"
         if self.show_7days_only:
             status_msg += " (7-day filter active)"
@@ -1411,16 +1388,9 @@ class FeedMind:
             fav_marker = "★" if article['is_favorite'] else ""
             date_str = article['published'][:10] if article['published'] else ""
 
-            tags = []
-            if not article['is_read']:
-                tags.append('unread')
-            else:
-                tags.append('read')
-
-            item_id = self.article_tree.insert("", tk.END, text=unread_marker,
-                                               values=(fav_marker, article['title'], date_str),
-                                               tags=tags)
-            self.article_tree.item(item_id, tags=(str(article['id']),))
+            self.article_tree.insert("", tk.END, text=unread_marker,
+                                     values=(fav_marker, article['title'], date_str),
+                                     tags=self._article_tags(article))
 
         self.article_tree.tag_configure('unread', font=("Arial", 10, "bold"))
         self.article_tree.tag_configure('read', foreground=self.current_theme.fg_secondary)
@@ -1434,7 +1404,8 @@ class FeedMind:
 
     def _clear_cache(self):
         """Clear old cached articles (manual cleanup)."""
-        if messagebox.askyesno("Confirm", "Clear articles older than 3 weeks (21 days)?"):
+        if messagebox.askyesno("Confirm", "Clear articles older than 3 weeks (21 days)?\n\n"
+                               "Favorites and downloaded podcast episodes are kept."):
             count = self.db.clear_old_articles(days=21)
             self._update_view()
             self._set_status(f"Cleared {count} old articles")
@@ -1591,7 +1562,8 @@ class FeedMind:
                 if feed:
                     title = f"Unread Articles from {feed['title']}"
             else:
-                articles = self.db.search_articles("", show_read=False)
+                articles = self.db.get_cached_articles(unread_only=True,
+                                                       limit=self.ARTICLE_LIST_LIMIT)
                 title = "All Unread RSS Articles"
         else:  # all
             if self.current_feed_url:
